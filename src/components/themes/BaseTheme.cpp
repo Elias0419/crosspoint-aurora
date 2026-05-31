@@ -182,7 +182,9 @@ void BaseTheme::drawHintLabel(GfxRenderer& renderer, const int fontId, const cha
 
 void BaseTheme::drawButtonHints(GfxRenderer& renderer, const char* btn1, const char* btn2, const char* btn3,
                                 const char* btn4) const {
-  if (gpio.hasTouch()) {
+  // User can hide the on-screen button hint row for a cleaner layout;
+  // touch devices never show the physical-button hints.
+  if (gpio.hasTouch() || !SETTINGS.showButtonHints) {
     return;
   }
 
