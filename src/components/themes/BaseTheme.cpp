@@ -217,7 +217,9 @@ void BaseTheme::drawButtonHints(GfxRenderer& renderer, const char* btn1, const c
 }
 
 void BaseTheme::drawSideButtonHints(const GfxRenderer& renderer, const char* topBtn, const char* bottomBtn) const {
-  if (gpio.hasTouch()) {
+  // Governed by the same user toggle as the front button hint row;
+  // touch devices never show the physical-button hints.
+  if (gpio.hasTouch() || !SETTINGS.showButtonHints) {
     return;
   }
 
