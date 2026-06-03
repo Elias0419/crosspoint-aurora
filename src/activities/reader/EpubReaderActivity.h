@@ -74,10 +74,14 @@ class EpubReaderActivity final : public Activity {
   // Next-book suggestion menu for the End-of-Book screen
   EndOfBookOptions endOfBookOptions;
 
-  // Aurora reader toolbar overlay (shown on Select instead of the classic list
-  // menu). focusedTool: 0=Contents, 1=Text, 2=More.
-  bool toolbarVisible = false;
-  int focusedTool = 0;
+  // Aurora reader overlays, drawn over the page (no full-screen sub-menus). Select
+  // opens the Toolbar; its tools open the Contents/Text/More panels.
+  enum class Overlay { None, Toolbar, Contents, Text, More };
+  Overlay overlay = Overlay::None;
+  int focusedTool = 0;     // toolbar tool focus: 0=Contents, 1=Text, 2=More
+  int panelIndex = 0;      // selected row within the active panel
+  int autoTurnOption = 0;  // current auto page-turn rate index (More panel)
+  std::vector<EpubReaderMenuActivity::MenuAction> moreActions;
 
   // Footnote support
   std::vector<FootnoteEntry> currentPageFootnotes;
@@ -177,13 +181,22 @@ class EpubReaderActivity final : public Activity {
   // No-op while the section is still building or when the pagination is unchanged (plain resume).
   bool applyDeferredReposition();
   void rememberCurrentContentOffset();
-  // Aurora toolbar overlay: draw it over the current page, and activate the focused tool.
-  void handleToolbarInput();
-  void renderToolbarOverlay() const;
-  void activateToolbarTool(int tool);
-  void openMoreMenu();
-  void openTextPanel();
+  // Aurora reader overlays (toolbar + Contents/Text/More panels over the page).
+  void openOverlay(Overlay target);
+  void handleOverlayInput();
+  void renderOverlay();
   std::string currentChapterTitle() const;
+  // Text panel rows (font family/size, line spacing, alignment, focus reading).
+  std::string textRowName(int row) const;
+  std::string textRowValue(int row) const;
+  void cycleTextRow(int row, int dir);
+  // More panel rows.
+  void buildMoreActions();
+  std::string moreRowName(int row) const;
+  std::string moreRowValue(int row) const;
+  void activateMoreRow(int row);
+  // Classic (non-Aurora) themes: the full-screen reader menu launched on Select.
+  void openClassicReaderMenu();
   void silentIndexNextChapterIfNeeded(uint16_t viewportWidth, uint16_t viewportHeight);
   bool saveProgress(int spineIndex, int currentPage, int pageCount);
   // Jump to a percentage of the book (0-100), mapping it to spine and page.
