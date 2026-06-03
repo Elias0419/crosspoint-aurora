@@ -26,6 +26,7 @@
 #include "EpubReaderChapterSelectionActivity.h"
 #include "EpubReaderFootnotesActivity.h"
 #include "EpubReaderPercentSelectionActivity.h"
+#include "EpubReaderTextActivity.h"
 #include "EpubReaderUtils.h"
 #include "KOReaderCredentialStore.h"
 #include "KOReaderSyncActivity.h"
@@ -487,6 +488,12 @@ void EpubReaderActivity::loop() {
     requestUpdate();
   }
 
+  // Aurora reader toolbar overlay: while open it owns all input.
+  if (GUI.ownsReaderChrome() && toolbarVisible) {
+    handleToolbarInput();
+    return;
+  }
+
   // While the end screen suggestion menu is showing it owns Confirm/Back/navigation
   // input. Anything it doesn't handle (e.g. long-press Back to the file browser) falls
   // through to the regular handlers below; page turns are absorbed by the end-of-book
@@ -516,14 +523,22 @@ void EpubReaderActivity::loop() {
     }
   }
 
-  // Enter reader menu activity on short-press Confirm or a downward swipe from the top edge. A long-press
-  // that fired a bound function (bookmark or KOReader sync) sets ignoreNextConfirmRelease so the release
-  // following the hold does not also open the menu.
+  // Short-press Confirm (or a downward swipe from the top edge) opens the Aurora toolbar
+  // overlay (or the classic reader menu on other themes). A long-press that fired a bound
+  // function (bookmark or KOReader sync) sets ignoreNextConfirmRelease so the release
+  // following the hold does not also open it.
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) || ReaderUtils::isTouchMenuGesture(mappedInput)) {
     if (ignoreNextConfirmRelease) {
       ignoreNextConfirmRelease = false;
+    } else if (GUI.ownsReaderChrome()) {
+      if (section) {
+        toolbarVisible = true;
+        focusedTool = 0;
+        renderToolbarOverlay();
+        renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+      }
     } else {
-      openReaderMenu();
+      openMoreMenu();
     }
   }
 
@@ -1127,9 +1142,12 @@ void EpubReaderActivity::render(RenderLock&& lock) {
 
   const uint8_t statusBarHeight = UITheme::getInstance().getStatusBarHeight();
 
-  // reserves space for automatic page turn indicator when no status bar or progress bar only
-  if (automaticPageTurnActive &&
-      (statusBarHeight == 0 || statusBarHeight == UITheme::getInstance().getProgressBarHeight())) {
+  if (GUI.ownsReaderChrome()) {
+    // Aurora: clean reading page, no persistent status bar — text fills the page.
+    orientedMarginBottom += SETTINGS.screenMargin;
+  } else if (automaticPageTurnActive &&
+             (statusBarHeight == 0 || statusBarHeight == UITheme::getInstance().getProgressBarHeight())) {
+    // reserves space for automatic page turn indicator when no status bar or progress bar only
     orientedMarginBottom +=
         std::max(SETTINGS.screenMargin,
                  static_cast<uint8_t>(statusBarHeight + UITheme::getInstance().getMetrics().statusBarVerticalMargin));
@@ -1507,6 +1525,12 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   if (showDictionaryMessage) {
     GUI.drawPopup(renderer, tr(STR_DICT_NO_DICT_SET));
   }
+
+  // Aurora: overlay the toolbar on top of the freshly rendered page.
+  if (toolbarVisible && GUI.ownsReaderChrome()) {
+    renderToolbarOverlay();
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+  }
 }
 
 bool EpubReaderActivity::applyDeferredReposition() {
@@ -1848,6 +1872,10 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
 }
 
 void EpubReaderActivity::renderStatusBar() const {
+  // Aurora owns the reader chrome: the reading page is kept clean (progress lives
+  // in the toolbar overlay), so there is no persistent bottom status bar.
+  if (GUI.ownsReaderChrome()) return;
+
   // Calculate progress in book. Use the estimated total while a giant spine is still building so
   // "page X of Y" and the progress bar don't read off the small build watermark.
   const int currentPage = section->currentPage + 1;
@@ -1885,6 +1913,114 @@ void EpubReaderActivity::renderStatusBar() const {
 
   GUI.drawStatusBar(renderer, bookProgress, currentPage, pageCount, title, 0, textYOffset, true, currentPageBookmarked,
                     section->isBuilding());
+}
+
+std::string EpubReaderActivity::currentChapterTitle() const {
+  if (!epub) return "";
+  const int tocIndex = epub->getTocIndexForSpineIndex(currentSpineIndex);
+  if (tocIndex != -1) {
+    return epub->getTocItem(tocIndex).title;
+  }
+  return tr(STR_UNNAMED);
+}
+
+void EpubReaderActivity::renderToolbarOverlay() const {
+  if (!epub || !section) return;
+
+  const std::string bookTitle = utf8ComposeNfc(epub->getTitle());
+  const std::string chapterTitle = currentChapterTitle();
+  const float chapterProgress =
+      section->pageCount > 0 ? static_cast<float>(section->currentPage + 1) / static_cast<float>(section->pageCount)
+                             : 0.0f;
+  const float bookProgress = epub->calculateProgress(currentSpineIndex, chapterProgress);
+
+  ReaderToolbarInfo info;
+  info.bookTitle = bookTitle.c_str();
+  info.chapterTitle = chapterTitle.c_str();
+  info.chapterPage = section->currentPage + 1;
+  info.chapterPageCount = section->pageCount;
+  info.bookPercent = clampPercent(static_cast<int>(bookProgress * 100.0f + 0.5f));
+  info.progress = bookProgress;
+  info.focusedTool = focusedTool;
+  info.focusReadingOn = SETTINGS.focusReadingEnabled != 0;
+
+  const Rect screen{0, 0, renderer.getScreenWidth(), renderer.getScreenHeight()};
+  GUI.drawReaderToolbar(renderer, screen, info);
+}
+
+void EpubReaderActivity::handleToolbarInput() {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    toolbarVisible = false;
+    requestUpdate();  // redraw the clean page, erasing the toolbar
+    return;
+  }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
+    focusedTool = (focusedTool + 2) % 3;
+    renderToolbarOverlay();
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+    return;
+  }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Right)) {
+    focusedTool = (focusedTool + 1) % 3;
+    renderToolbarOverlay();
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+    return;
+  }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    activateToolbarTool(focusedTool);
+    return;
+  }
+  // Up/Down scrub through chapters, keeping the toolbar open.
+  const bool prev = mappedInput.wasReleased(MappedInputManager::Button::Up);
+  const bool next = mappedInput.wasReleased(MappedInputManager::Button::Down);
+  if (prev || next) {
+    const int spineCount = epub->getSpineItemsCount();
+    int target = currentSpineIndex + (next ? 1 : -1);
+    if (target < 0) target = 0;
+    if (target > spineCount - 1) target = spineCount - 1;
+    if (target != currentSpineIndex) {
+      RenderLock lock(*this);
+      nextPageNumber = 0;
+      currentSpineIndex = target;
+      section.reset();
+    }
+    requestUpdate();  // render() re-renders the page and re-overlays the toolbar
+  }
+}
+
+void EpubReaderActivity::activateToolbarTool(int tool) {
+  toolbarVisible = false;  // the tool takes over; the page is clean again on return
+  switch (tool) {
+    case 0:
+      onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction::SELECT_CHAPTER);
+      break;
+    case 1:
+      openTextPanel();
+      break;
+    case 2:
+    default:
+      openMoreMenu();
+      break;
+  }
+}
+
+// The Aurora toolbar's "More" tool opens the same reader menu as the classic themes.
+void EpubReaderActivity::openMoreMenu() { openReaderMenu(); }
+
+void EpubReaderActivity::openTextPanel() {
+  startActivityForResult(std::make_unique<EpubReaderTextActivity>(renderer, mappedInput),
+                         [this](const ActivityResult&) {
+                           // Reader display settings may have changed; re-paginate from the
+                           // current position (proportionally, like a settings change).
+                           RenderLock lock(*this);
+                           if (section) {
+                             cachedSpineIndex = currentSpineIndex;
+                             cachedChapterTotalPageCount = section->pageCount;
+                             nextPageNumber = section->currentPage;
+                           }
+                           section.reset();
+                           requestUpdate();
+                         });
 }
 
 void EpubReaderActivity::navigateToHref(const std::string& hrefStr, const bool savePosition) {
