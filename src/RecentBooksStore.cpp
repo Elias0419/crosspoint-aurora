@@ -17,6 +17,7 @@ void RecentBooksStore::toJson(JsonDocument& doc) const {
     obj["title"] = book.title;
     obj["author"] = book.author;
     obj["coverBmpPath"] = book.coverBmpPath;
+    obj["progress"] = book.progressPercent;
   }
 }
 
@@ -33,6 +34,7 @@ bool RecentBooksStore::fromJson(JsonVariantConst doc) {
     book.title = obj["title"] | "";
     book.author = obj["author"] | "";
     book.coverBmpPath = obj["coverBmpPath"] | "";
+    book.progressPercent = static_cast<uint8_t>(obj["progress"] | static_cast<int>(RecentBook::kProgressUnknown));
     recentBooks.push_back(book);
   }
 
@@ -74,6 +76,16 @@ void RecentBooksStore::updateBook(const std::string& path, const std::string& ti
     book.coverBmpPath = coverBmpPath;
     saveToFile();
   }
+}
+
+void RecentBooksStore::updateProgress(const std::string& path, uint8_t percent) {
+  auto it =
+      std::find_if(recentBooks.begin(), recentBooks.end(), [&](const RecentBook& book) { return book.path == path; });
+  if (it == recentBooks.end() || it->progressPercent == percent) {
+    return;
+  }
+  it->progressPercent = percent;
+  saveToFile();
 }
 
 bool RecentBooksStore::removeByPath(const std::string& path) {

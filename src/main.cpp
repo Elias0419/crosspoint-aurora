@@ -34,6 +34,9 @@
 #include "images/LoadingIcon.h"
 #include "util/ButtonNavigator.h"
 #include "util/ScreenshotUtil.h"
+#ifdef X4EMU_ETH
+#include "emu_net.h"  // x4-emu: bring up Ethernet-over-QEMU for host networking
+#endif
 
 GfxRenderer renderer(display);
 MappedInputManager mappedInputManager(gpio, renderer);
@@ -284,6 +287,12 @@ void setup() {
   // checkPanic() clears the watchdog capture marker after a successful SD
   // dump, so retain the boot classification for the later activity route.
   const bool rebootedFromPanic = HalSystem::isRebootFromPanic();
+
+#ifdef X4EMU_ETH
+  // x4-emu only: bring up Ethernet over the QEMU OpenCores MAC so the firmware
+  // reaches the host's internet (SLIRP). No-op on real hardware (flag is off).
+  emuNetStart();
+#endif
 
   // Read-and-clear so a panic later in setup() doesn't loop into silent reboot.
   // Bound the target range too — RTC_NOINIT memory is uninitialized on cold boot.
