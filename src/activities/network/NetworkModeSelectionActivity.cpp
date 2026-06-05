@@ -38,8 +38,10 @@ void NetworkModeSelectionActivity::loop() {
     onModeSelected(mode);
   };
 
-  // Handle back button - cancel
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+  // Handle back button - cancel. Use a release edge (matching the parent screen) so a
+  // single press isn't handled here (on press) and again by the parent (on release),
+  // popping straight back to the library. See LanguageSelectActivity.
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     onCancel();
     return;
   }

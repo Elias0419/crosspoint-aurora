@@ -423,6 +423,9 @@ bool FontDownloadActivity::isSelectedFamilyDeletable() const {
 // --- Input handling ---
 
 void FontDownloadActivity::loop() {
+  // Use release edges (matching the parent Settings screen): a single Back/Confirm
+  // press must not be handled by both this screen (on press) and the parent (on
+  // release), which would pop straight back to the library. See LanguageSelectActivity.
   if (state_ == FAMILY_LIST) {
     auto activateSelected = [this] {
       if (families_.empty()) return;
@@ -454,7 +457,7 @@ void FontDownloadActivity::loop() {
       requestUpdateAndWait();
     };
 
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
       finish();
       return;
     }
@@ -510,15 +513,15 @@ void FontDownloadActivity::loop() {
       requestUpdate();
     });
 
-    if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       activateSelected();
       return;
     }
   } else if (state_ == COMPLETE) {
     int x = 0;
     int y = 0;
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
-        mappedInput.wasPressed(MappedInputManager::Button::Confirm) || mappedInput.wasScreenTapped(x, y)) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||
+        mappedInput.wasReleased(MappedInputManager::Button::Confirm) || mappedInput.wasScreenTapped(x, y)) {
       {
         RenderLock lock(*this);
         state_ = FAMILY_LIST;
@@ -526,13 +529,13 @@ void FontDownloadActivity::loop() {
       requestUpdate();
     }
   } else if (state_ == ERROR) {
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
       {
         RenderLock lock(*this);
         state_ = FAMILY_LIST;
       }
       requestUpdate();
-    } else if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
+    } else if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       if (downloadingFamilyIndex_ >= 0 && downloadingFamilyIndex_ < static_cast<int>(families_.size())) {
         downloadFamily(families_[downloadingFamilyIndex_]);
         requestUpdateAndWait();

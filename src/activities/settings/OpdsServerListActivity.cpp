@@ -66,7 +66,10 @@ void OpdsServerListActivity::onExit() { Activity::onExit(); }
 void OpdsServerListActivity::loop() {
   auto activateSelected = [this] { handleSelection(); };
 
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+  // Use release edges (matching the parent Settings screen): a single Back/Confirm
+  // press must not be handled by both this submenu (on press) and the parent (on
+  // release), which would pop straight back to the library. See LanguageSelectActivity.
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     if (pickerMode) {
       activityManager.goHome(HomeMenuItem::OPDS_BROWSER);
     } else {
@@ -75,7 +78,7 @@ void OpdsServerListActivity::loop() {
     return;
   }
 
-  if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
     activateSelected();
     return;
   }

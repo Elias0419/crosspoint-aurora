@@ -95,7 +95,10 @@ void ClockSyncActivity::loop() {
 
   int x = 0;
   int y = 0;
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasScreenTapped(x, y)) {
+  // Release edges (matching the parent Settings screen) so this dismissal press isn't
+  // also seen by the parent on release, popping straight back to the library.
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||
+      mappedInput.wasReleased(MappedInputManager::Button::Confirm) || mappedInput.wasScreenTapped(x, y)) {
     finish();
   }
 }

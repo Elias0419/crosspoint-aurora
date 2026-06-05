@@ -214,6 +214,9 @@ void OtaUpdateActivity::runUpdateInstall() {
 }
 
 void OtaUpdateActivity::loop() {
+  // Use release edges (matching the parent Settings screen): a single Back/Confirm
+  // press must not be handled by both this screen (on press) and the parent (on
+  // release), which would pop straight back to the library. See LanguageSelectActivity.
   if (state == WAITING_CONFIRMATION) {
     int x = 0;
     int y = 0;
@@ -229,12 +232,12 @@ void OtaUpdateActivity::loop() {
       }
     }
 
-    if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       runUpdateInstall();
       return;
     }
 
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
       finish();
     }
 
@@ -244,7 +247,7 @@ void OtaUpdateActivity::loop() {
   if (state == FAILED) {
     int x = 0;
     int y = 0;
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasScreenTapped(x, y)) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back) || mappedInput.wasScreenTapped(x, y)) {
       finish();
     }
     return;
@@ -253,7 +256,7 @@ void OtaUpdateActivity::loop() {
   if (state == NO_UPDATE) {
     int x = 0;
     int y = 0;
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasScreenTapped(x, y)) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back) || mappedInput.wasScreenTapped(x, y)) {
       finish();
     }
     return;
