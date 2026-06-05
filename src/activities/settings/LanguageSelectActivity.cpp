@@ -29,12 +29,16 @@ void LanguageSelectActivity::onExit() { Activity::onExit(); }
 void LanguageSelectActivity::loop() {
   auto activateSelected = [this] { handleSelection(); };
 
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+  // Use release edges (matching the parent Settings screen) so a single Back/Confirm
+  // press isn't seen by both this activity (on press) and the parent (on release):
+  // otherwise one Back press pops to Settings here, then the same release fires the
+  // Settings screen's Back handler and jumps all the way to the library.
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     onBack();
     return;
   }
 
-  if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
     activateSelected();
     return;
   }

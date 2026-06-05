@@ -184,7 +184,7 @@ void BaseTheme::drawButtonHints(GfxRenderer& renderer, const char* btn1, const c
                                 const char* btn4) const {
   // User can hide the on-screen button hint row for a cleaner layout;
   // touch devices never show the physical-button hints.
-  if (gpio.hasTouch() || !SETTINGS.showButtonHints) {
+  if (gpio.hasTouch() || !SETTINGS.showFrontButtonHints()) {
     return;
   }
 
@@ -217,9 +217,9 @@ void BaseTheme::drawButtonHints(GfxRenderer& renderer, const char* btn1, const c
 }
 
 void BaseTheme::drawSideButtonHints(const GfxRenderer& renderer, const char* topBtn, const char* bottomBtn) const {
-  // Governed by the same user toggle as the front button hint row;
+  // Edge hints only appear in the Front + Edge mode (the front row can show alone);
   // touch devices never show the physical-button hints.
-  if (gpio.hasTouch() || !SETTINGS.showButtonHints) {
+  if (gpio.hasTouch() || !SETTINGS.showEdgeButtonHints()) {
     return;
   }
 
