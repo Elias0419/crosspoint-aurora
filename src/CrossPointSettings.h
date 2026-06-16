@@ -287,6 +287,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t embeddedStyle = 1;
   // Focus Reading - emphasizes the first part of words with bold
   uint8_t focusReadingEnabled = 0;
+  // Drop Caps - enlarged decorative initial on the first paragraph of each chapter
+  uint8_t dropCapsEnabled = 1;
   // SD card font family name (empty = use built-in fontFamily)
   char sdFontFamilyName[32] = "";
   // Dictionary folder name under /dictionaries (empty = no dictionary)
