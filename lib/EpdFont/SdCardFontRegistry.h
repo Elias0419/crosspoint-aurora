@@ -16,11 +16,6 @@ struct SdCardFontFileInfo {
 struct SdCardFontFamilyInfo {
   std::string name;  // directory name, e.g. "NotoSansCJK"
   std::vector<SdCardFontFileInfo> files;
-  // Optional enlarged drop-cap faces for this family, discovered from a
-  // "<family>/dropcap/" subfolder (e.g. "/fonts/Bookerly/dropcap/Bookerly_76.cpfont").
-  // Regular-only, much larger point sizes. Empty when the family ships no drop-cap
-  // variant — the reader then falls back to integer-scaling the body glyph.
-  std::vector<SdCardFontFileInfo> dropCapFiles;
 
   const SdCardFontFileInfo* findFile(uint8_t size, uint8_t style = 0) const;
   // Installed file closest to `pointSize` (ties → smaller). nullptr when the
@@ -28,7 +23,6 @@ struct SdCardFontFamilyInfo {
   const SdCardFontFileInfo* findNearestSize(uint8_t pointSize, uint8_t style = 0) const;
   bool hasSize(uint8_t size) const;
   std::vector<uint8_t> availableSizes() const;
-  bool hasDropCap() const { return !dropCapFiles.empty(); }
 };
 
 class SdCardFontRegistry {
@@ -38,6 +32,12 @@ class SdCardFontRegistry {
   // when creating new installs; both are read from if present.
   static constexpr const char* FONTS_DIR_HIDDEN = "/.fonts";
   static constexpr const char* FONTS_DIR_VISIBLE = "/fonts";
+  // Standalone drop-cap font roots. A drop-cap font is an enlarged decorative
+  // initial face (regular-only, large point sizes), picked independently of the
+  // reader font. Same on-disk layout as the reading roots:
+  // "/<root>/<Family>/<Family>_<size>.cpfont".
+  static constexpr const char* DROPCAP_DIR_HIDDEN = "/.dropcap";
+  static constexpr const char* DROPCAP_DIR_VISIBLE = "/dropcap";
 
   // Returns the existing root for `familyName` (the one that contains
   // /<root>/<familyName>/), or nullptr if the family is not installed in
@@ -49,8 +49,13 @@ class SdCardFontRegistry {
   // the two roots exists, otherwise the hidden root.
   static const char* defaultWriteRoot();
 
-  // Scan SD card, populate families_. Returns true if any families found.
+  // Scan the reading-font roots (/.fonts, /fonts), populate families_.
+  // Returns true if any families found.
   bool discover();
+
+  // Scan the standalone drop-cap roots (/.dropcap, /dropcap), populate families_.
+  // Returns true if any families found.
+  bool discoverDropCaps();
 
   const std::vector<SdCardFontFamilyInfo>& getFamilies() const { return families_; }
   const SdCardFontFamilyInfo* findFamily(const std::string& name) const;
@@ -62,9 +67,11 @@ class SdCardFontRegistry {
 
   static bool parseFilename(const char* filename, uint8_t& size, uint8_t& style);
   // Append the .cpfont files in dirPath (non-recursive) to `out`, de-duplicating
-  // by (pointSize, style). Used for both the family's reading faces and its
-  // optional dropcap/ subfolder.
+  // by (pointSize, style).
   static void scanDirectory(const char* dirPath, std::vector<SdCardFontFileInfo>& out);
   // Scan one root (e.g. "/.fonts"), append families to `out`, dedup by name.
   static void scanRoot(const char* rootPath, std::vector<SdCardFontFamilyInfo>& out);
+  // Shared body of discover()/discoverDropCaps(): scan the hidden root then the
+  // visible root (hidden wins on name collisions), sort, and cap.
+  bool discoverRoots(const char* hiddenRoot, const char* visibleRoot);
 };
