@@ -481,6 +481,11 @@ void setup() {
     gpio.update();
     delay(10);
     gpio.update();
+  } else if (wakeupReason == HalGPIO::WakeupReason::PowerButton) {
+    // A normal sleep wake retains the wallpaper until the first activity
+    // physically refreshes the panel. Complete that paint before setup exits
+    // so the screen cannot remain on the retained sleep frame.
+    activityManager.requestUpdateAndWait();
   }
 
   allowSleepAt = millis() + 2000;
@@ -494,6 +499,10 @@ void loop() {
   gpio.setSharedConfirmPowerShortPressEmitsPower(SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP);
   gpio.update();
   halTiltSensor.update(SETTINGS.tiltPageTurn, SETTINGS.orientation, activityManager.isReaderActivity());
+
+  if (!powerButtonReleasedAfterBoot && !gpio.isPowerButtonPhysicallyPressed()) {
+    powerButtonReleasedAfterBoot = true;
+  }
 
   renderer.setFadingFix(SETTINGS.fadingFix);
 
@@ -570,12 +579,14 @@ void loop() {
 
   // A hold that woke the device must be released before it can count as a new
   // in-app long press. Otherwise a user who keeps holding after wake would put
-  // the device straight back to sleep once allowSleepAt expires.
+  // the device straight back to sleep once allowSleepAt expires. The latch also
+  // consults the raw pin: the debounced state can report a false release during
+  // boot, which would arm the gate while the wake hold is still in progress.
   static bool powerReleasedSinceWake = false;
-  if (!gpio.isPressed(HalGPIO::BTN_POWER)) powerReleasedSinceWake = true;
+  if (!gpio.isPressed(HalGPIO::BTN_POWER) && !gpio.isPowerButtonPhysicallyPressed()) powerReleasedSinceWake = true;
 
-  if (powerReleasedSinceWake && millis() >= allowSleepAt && gpio.isPressed(HalGPIO::BTN_POWER) &&
-      gpio.getPowerButtonHeldTime() > SETTINGS.getPowerButtonDuration()) {
+  if (powerReleasedSinceWake && millis() >= allowSleepAt && gpio.isPowerButtonPhysicallyPressed() &&
+      gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getPowerButtonHeldTime() > SETTINGS.getPowerButtonDuration()) {
     // If the screenshot combination is potentially being pressed, don't sleep
     if (gpio.isPressed(HalGPIO::BTN_DOWN)) {
       return;

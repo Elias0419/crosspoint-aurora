@@ -171,6 +171,20 @@ bool HalGPIO::isTouchTapCandidate(float& nx, float& ny, unsigned long& heldMs) c
   return inputMgr.isTouchTapCandidate(nx, ny, heldMs);
 }
 
+bool HalGPIO::isPowerButtonPhysicallyPressed() const { return digitalRead(InputManager::POWER_BUTTON_PIN) == LOW; }
+
+void HalGPIO::startDeepSleep() {
+  // Ensure that the power button has been released to avoid immediately turning back on if you're holding it
+  while (inputMgr.isPressed(BTN_POWER)) {
+    delay(50);
+    inputMgr.update();
+  }
+  // Arm the wakeup trigger *after* the button is released
+  esp_deep_sleep_enable_gpio_wakeup(1ULL << InputManager::POWER_BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
+  // Enter Deep Sleep
+  esp_deep_sleep_start();
+}
+
 bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return inputMgr.isTouchHeldAt(nx, ny); }
 
 unsigned long HalGPIO::lastTouchHeldMs() const { return inputMgr.lastTouchHeldMs(); }
