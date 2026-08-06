@@ -262,6 +262,7 @@ ReaderRenderSpec CrossPointSettings::readerRenderSpec(const uint16_t viewportWid
   spec.imageRendering = imageRendering;
   spec.focusReadingEnabled = focusReadingEnabled != 0;
   spec.dropCapsEnabled = dropCapsEnabled != 0;
+  spec.smallCapsFirstLine = smallCapsFirstLine != 0;
   return spec;
 }
 

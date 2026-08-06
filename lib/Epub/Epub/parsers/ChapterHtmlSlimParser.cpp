@@ -431,10 +431,10 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
 
   if (strcmp(name, "p") == 0) {
     self->xpathParagraphIndex++;
-    // Arm the drop cap for the chapter's first paragraph only. Consumed (and the block
-    // marked) in startNewTextBlock when this <p>'s text block is created. Headings are
-    // not <p>, so the cap naturally lands on the first body paragraph.
-    if (self->dropCapsEnabled && !self->dropCapDone) {
+    // Arm the chapter-opening treatment (drop cap and/or small-caps first line) for the
+    // first paragraph only. Consumed (and the block marked) in startNewTextBlock when this
+    // <p>'s text block is created. Headings are not <p>, so it lands on the first body para.
+    if ((self->dropCapsEnabled && !self->dropCapDone) || (self->smallCapsFirstLine && !self->smallCapsDone)) {
       self->dropCapArmed = true;
     }
   }
@@ -1793,10 +1793,15 @@ void ChapterHtmlSlimParser::makePages() {
     }
   }
 
+  // Small caps: render the chapter's opening line in all-caps. Shares the candidate
+  // paragraph with drop caps; commits once via smallCapsDone.
+  const bool applySmallCaps = currentTextBlock->isDropCapCandidate() && smallCapsFirstLine && !smallCapsDone;
+  if (applySmallCaps) smallCapsDone = true;
+
   currentTextBlock->layoutAndExtractLines(
       renderer, fontId, effectiveWidth,
       [this](const std::shared_ptr<TextBlock>& textBlock, const uint32_t offset) { addLineToPage(textBlock, offset); },
-      true, dropCapPtr);
+      true, dropCapPtr, applySmallCaps);
 
   // Fallback: transfer any remaining pending footnotes to current page.
   // Normally addLineToPage handles this via word-index tracking, but this catches

@@ -88,6 +88,8 @@ class ParsedText {
   // Drop cap for the current layout pass (borrowed, set by layoutAndExtractLines).
   const DropCapSpec* dropCap_ = nullptr;
   bool dropCapCandidate_ = false;
+  // When set, the first emitted line's words are uppercased (chapter small-caps opening).
+  bool smallCapsFirstLine_ = false;
   std::vector<size_t> computeLineBreaks(const GfxRenderer& renderer, int fontId, int pageWidth,
                                         std::vector<uint16_t>& wordWidths, std::vector<bool>& continuesVec,
                                         std::vector<bool>& noSpaceBeforeVec);
@@ -138,5 +140,6 @@ class ParsedText {
   bool buildDropCapPrefix(std::string& outText, uint32_t& letterCp, EpdFontFamily::Style& letterStyle) const;
   void layoutAndExtractLines(const GfxRenderer& renderer, int fontId, uint16_t viewportWidth,
                              const std::function<void(std::shared_ptr<TextBlock>, uint32_t)>& processLine,
-                             bool includeLastLine = true, const DropCapSpec* dropCap = nullptr);
+                             bool includeLastLine = true, const DropCapSpec* dropCap = nullptr,
+                             bool smallCapsFirstLine = false);
 };

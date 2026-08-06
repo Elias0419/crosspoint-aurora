@@ -22,4 +22,5 @@ struct ReaderRenderSpec {
   uint8_t imageRendering = 0;
   bool focusReadingEnabled = false;
   bool dropCapsEnabled = false;
+  bool smallCapsFirstLine = false;
 };

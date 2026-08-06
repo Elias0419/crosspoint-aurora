@@ -521,10 +521,6 @@ void loop() {
   gpio.update();
   halTiltSensor.update(SETTINGS.tiltPageTurn, SETTINGS.orientation, activityManager.isReaderActivity());
 
-  if (!powerButtonReleasedAfterBoot && !gpio.isPowerButtonPhysicallyPressed()) {
-    powerButtonReleasedAfterBoot = true;
-  }
-
   renderer.setFadingFix(SETTINGS.fadingFix);
 
   if (Serial && millis() - lastMemPrint >= 10000) {
