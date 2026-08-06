@@ -55,6 +55,11 @@ class ChapterHtmlSlimParser {
   bool hyphenationEnabled;
   bool focusReadingEnabled;
   bool dropCapsEnabled;
+  // Drop-cap arming: set when the chapter's first <p> opens, consumed when its text block
+  // is created (marking it the candidate). dropCapDone latches once a cap is committed so
+  // only the opening paragraph gets it.
+  bool dropCapArmed = false;
+  bool dropCapDone = false;
   const CssParser* cssParser;
   bool embeddedStyle;
   uint8_t imageRendering;
