@@ -91,8 +91,18 @@ int SdCardFontSystem::loadDropCapFamily(GfxRenderer& renderer, const char* name)
 
   // Drop-cap faces are large (e.g. 60-76pt), so map the reader's size enum
   // ordinally onto the family's available sizes rather than by nearest reading
-  // size (which would always collapse to the smallest face).
-  const uint8_t sizeEnum = fontSizeEnumFromSettings();
+  // size (which would always collapse to the smallest face). Develop tracks the
+  // reader size as a point size, so derive the ordinal from its position among
+  // the reader's available point sizes.
+  const auto readerSizes = readerFontPointSizes(&registry_, SETTINGS.sdFontFamilyName);
+  const uint8_t curReaderPt = snapToNearestPointSize(readerSizes, SETTINGS.fontPointSize);
+  uint8_t sizeEnum = 0;
+  for (size_t i = 0; i < readerSizes.size(); ++i) {
+    if (readerSizes[i] == curReaderPt) {
+      sizeEnum = static_cast<uint8_t>(i);
+      break;
+    }
+  }
   const auto sizes = family->availableSizes();  // ascending
   uint8_t idx = sizeEnum;
   if (idx >= sizes.size()) idx = sizes.empty() ? 0 : static_cast<uint8_t>(sizes.size() - 1);

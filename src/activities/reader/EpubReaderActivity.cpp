@@ -32,6 +32,7 @@
 #include "MappedInputManager.h"
 #include "ProgressMapper.h"
 #include "QrDisplayActivity.h"
+#include "ReaderFontSizes.h"
 #include "ReaderUtils.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
@@ -2126,7 +2127,6 @@ std::string EpubReaderActivity::textRowName(int row) const {
 
 std::string EpubReaderActivity::textRowValue(int row) const {
   static constexpr StrId kFamily[] = {StrId::STR_NOTO_SERIF, StrId::STR_NOTO_SANS};
-  static constexpr StrId kSize[] = {StrId::STR_SMALL, StrId::STR_MEDIUM, StrId::STR_LARGE, StrId::STR_X_LARGE};
   static constexpr StrId kSpacing[] = {StrId::STR_TIGHT, StrId::STR_NORMAL, StrId::STR_WIDE};
   static constexpr StrId kAlign[] = {StrId::STR_JUSTIFY, StrId::STR_ALIGN_LEFT, StrId::STR_CENTER,
                                      StrId::STR_ALIGN_RIGHT, StrId::STR_BOOK_S_STYLE};
@@ -2135,7 +2135,9 @@ std::string EpubReaderActivity::textRowValue(int row) const {
       if (SETTINGS.sdFontFamilyName[0] != '\0') return SETTINGS.sdFontFamilyName;
       return I18N.get(kFamily[SETTINGS.fontFamily % CrossPointSettings::FONT_FAMILY_COUNT]);
     case 1:
-      return I18N.get(kSize[SETTINGS.fontSize % CrossPointSettings::FONT_SIZE_COUNT]);
+      // Develop tracks the reader size as an actual point size (dynamic per family),
+      // so show "N pt" rather than the old Small/Medium/Large/XL enum labels.
+      return std::to_string(SETTINGS.fontPointSize) + " pt";
     case 2:
       return I18N.get(kSpacing[SETTINGS.lineSpacing % CrossPointSettings::LINE_COMPRESSION_COUNT]);
     case 3:
@@ -2155,9 +2157,24 @@ void EpubReaderActivity::cycleTextRow(int row, int dir) {
       SETTINGS.fontFamily = wrap(SETTINGS.fontFamily, dir, CrossPointSettings::FONT_FAMILY_COUNT);
       SETTINGS.sdFontFamilyName[0] = '\0';
       break;
-    case 1:
-      SETTINGS.fontSize = wrap(SETTINGS.fontSize, dir, CrossPointSettings::FONT_SIZE_COUNT);
+    case 1: {
+      // Cycle through the point sizes the active family actually ships (develop's
+      // dynamic size model), persisting the chosen size in SETTINGS.fontPointSize.
+      const auto sizes = readerFontPointSizes(&sdFontSystem.registry(), SETTINGS.sdFontFamilyName);
+      if (!sizes.empty()) {
+        const uint8_t cur = snapToNearestPointSize(sizes, SETTINGS.fontPointSize);
+        int idx = 0;
+        for (size_t i = 0; i < sizes.size(); ++i) {
+          if (sizes[i] == cur) {
+            idx = static_cast<int>(i);
+            break;
+          }
+        }
+        idx = (idx + dir + static_cast<int>(sizes.size())) % static_cast<int>(sizes.size());
+        SETTINGS.fontPointSize = sizes[idx];
+      }
       break;
+    }
     case 2:
       SETTINGS.lineSpacing = wrap(SETTINGS.lineSpacing, dir, CrossPointSettings::LINE_COMPRESSION_COUNT);
       break;

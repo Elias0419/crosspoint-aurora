@@ -152,7 +152,7 @@ void AuroraTheme::drawHomeScreen(GfxRenderer& renderer, Rect content, const std:
     if (!drew) {
       renderer.fillRect(x, y, w, h, true);
       const int ic = std::min(kIconSize, std::min(w, h) - 6);
-      if (ic > 0) renderer.drawIcon(CoverIcon, x + (w - ic) / 2, y + (h - ic) / 2, ic, ic);
+      if (ic > 0) renderer.drawIcon(CoverIcon, x + (w - ic) / 2, y + (h - ic) / 2, ic);
     }
     renderer.drawRect(x, y, w, h);
   };
@@ -231,7 +231,7 @@ void AuroraTheme::drawHomeScreen(GfxRenderer& renderer, Rect content, const std:
     const int capLineH = renderer.getLineHeight(kCaptionFontId);
     const int groupH = ic + 12 + titleLineH + 6 + capLineH;
     int ey = boxY + std::max(0, (boxH - groupH) / 2);
-    renderer.drawIcon(CoverIcon, boxX + (boxW - ic) / 2, ey, ic, ic);
+    renderer.drawIcon(CoverIcon, boxX + (boxW - ic) / 2, ey, ic);
     ey += ic + 12;
     renderer.drawCenteredText(kTitleFontId, ey, tr(STR_NO_OPEN_BOOK));
     ey += titleLineH + 6;
@@ -366,7 +366,7 @@ void AuroraTheme::drawBottomBar(GfxRenderer& renderer, Rect barRect, const std::
 
     const uint8_t* iconBitmap = barIconBitmap(icons[i]);
     if (iconBitmap != nullptr) {
-      renderer.drawIcon(iconBitmap, centerX - kIconSize / 2, barTop + 10, kIconSize, kIconSize);
+      renderer.drawIcon(iconBitmap, centerX - kIconSize / 2, barTop + 10, kIconSize);
     }
 
     const auto style = (i == activeTab) ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;

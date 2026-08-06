@@ -58,6 +58,16 @@ extern const char STRINGS_SK_DATA[];
 extern const uint16_t OFFSETS_SK[];
 extern const char STRINGS_VI_DATA[];
 extern const uint16_t OFFSETS_VI[];
+extern const char STRINGS_NB_DATA[];
+extern const uint16_t OFFSETS_NB[];
+extern const char STRINGS_P2_DATA[];
+extern const uint16_t OFFSETS_P2[];
+extern const char STRINGS_AR_DATA[];
+extern const uint16_t OFFSETS_AR[];
+extern const char STRINGS_BS_DATA[];
+extern const uint16_t OFFSETS_BS[];
+extern const char STRINGS_ID_DATA[];
+extern const uint16_t OFFSETS_ID[];
 }  // namespace i18n_strings
 
 // Language enum
@@ -88,6 +98,11 @@ enum class Language : uint8_t {
   HE = 23,
   SK = 24,
   VI = 25,
+  NB = 26,
+  P2 = 27,
+  AR = 28,
+  BS = 29,
+  ID = 30,
   _COUNT
 };
 
@@ -118,6 +133,7 @@ enum class StrId : uint16_t {
   STR_PAGE_LABEL,
   STR_ADVANCED_SETTINGS,
   STR_CONTINUE_READING,
+  STR_RESUME,
   STR_NO_OPEN_BOOK,
   STR_START_READING,
   STR_NO_FILES_FOUND,
@@ -127,17 +143,32 @@ enum class StrId : uint16_t {
   STR_END_OF_BOOK,
   STR_EMPTY_CHAPTER,
   STR_INDEXING,
+  STR_INDEX_FAILED,
   STR_MEMORY_ERROR,
   STR_PAGE_LOAD_ERROR,
   STR_EMPTY_FILE,
+  STR_INVALID_BMP_FILE,
+  STR_FILE_OPEN_FAILED,
   STR_OUT_OF_BOUNDS,
   STR_LOADING,
   STR_LOADING_POPUP,
+  STR_LOOKUP,
+  STR_DICT_LOOKING_UP,
+  STR_DICT_INDEXING,
+  STR_DICT_NOT_FOUND,
+  STR_DICT_NO_DICT_SET,
+  STR_DICT_ERROR,
+  STR_DICT_READ_FAILED,
+  STR_DICT_DECOMPRESS_ERROR,
+  STR_DICT_LOW_MEMORY,
   STR_WIFI_NETWORKS,
   STR_NO_NETWORKS,
   STR_NETWORKS_FOUND,
   STR_SCANNING,
+  STR_FINDING_SAVED_WIFI,
   STR_CONNECTING,
+  STR_CONNECTING_SAVED_WIFI,
+  STR_SHOW_NETWORKS,
   STR_CONNECTED,
   STR_CONNECTION_FAILED,
   STR_FORGET_NETWORK,
@@ -158,6 +189,8 @@ enum class StrId : uint16_t {
   STR_MAC_ADDRESS,
   STR_CHECKING_WIFI,
   STR_ENTER_WIFI_PASSWORD,
+  STR_ADD_HIDDEN_NETWORK,
+  STR_ENTER_WIFI_SSID,
   STR_TO_PREFIX,
   STR_CALIBRE_RECEIVING,
   STR_CALIBRE_RECEIVED,
@@ -181,9 +214,12 @@ enum class StrId : uint16_t {
   STR_IMAGES_DISPLAY,
   STR_IMAGES_PLACEHOLDER,
   STR_IMAGES_SUPPRESS,
+  STR_EOB_HOME,
+  STR_EOB_CONTINUE_WITH,
   STR_SHORT_PWR_BTN,
   STR_ORIENTATION,
   STR_SIDE_BTN_LAYOUT,
+  STR_TOUCH_READER_CONTROLS,
   STR_FRONT_BTN_FOLLOW_ORIENTATION,
   STR_LONG_PRESS_BEHAVIOR,
   STR_LONG_PRESS_BEHAVIOR_OFF,
@@ -193,6 +229,13 @@ enum class StrId : uint16_t {
   STR_FONT_PREVIEW_TEXT,
   STR_FONT_FAMILY,
   STR_FONT_SIZE,
+  STR_TEXT_SETTINGS,
+  STR_FONT,
+  STR_SIZE,
+  STR_LAYOUT,
+  STR_ALIGNMENT,
+  STR_STYLE,
+  STR_NOT_IN_PREVIEW,
   STR_LINE_SPACING,
   STR_SCREEN_MARGIN,
   STR_PARA_ALIGNMENT,
@@ -210,7 +253,16 @@ enum class StrId : uint16_t {
   STR_PASSWORD,
   STR_SYNC_SERVER_URL,
   STR_DOCUMENT_MATCHING,
+  STR_SEND_METADATA,
+  STR_SYNC_BEHAVIOR,
+  STR_ASK_EVERY_TIME,
+  STR_SMART_SYNC,
   STR_AUTHENTICATE,
+  STR_SIGN_UP,
+  STR_CREATING_ACCOUNT,
+  STR_ACCOUNT_CREATED,
+  STR_SIGNUP_FAILED,
+  STR_USERNAME_TAKEN,
   STR_KOREADER_USERNAME,
   STR_KOREADER_PASSWORD,
   STR_FILENAME,
@@ -256,6 +308,7 @@ enum class StrId : uint16_t {
   STR_NEXT_PREV,
   STR_KOSYNC,
   STR_BOOKMARK_OPTION,
+  STR_DICTIONARY,
   STR_DISABLED,
   STR_NOTO_SERIF,
   STR_NOTO_SANS,
@@ -263,10 +316,6 @@ enum class StrId : uint16_t {
   STR_UBUNTU,
   STR_EB_GARAMOND,
   STR_SFU_GOUDY,
-  STR_SMALL,
-  STR_MEDIUM,
-  STR_LARGE,
-  STR_X_LARGE,
   STR_TIGHT,
   STR_NORMAL,
   STR_WIDE,
@@ -306,7 +355,6 @@ enum class StrId : uint16_t {
   STR_ERROR_GENERAL_FAILURE,
   STR_ERROR_NETWORK_NOT_FOUND,
   STR_ERROR_CONNECTION_TIMEOUT,
-  STR_SD_CARD,
   STR_BACK,
   STR_EXIT,
   STR_HOME,
@@ -320,6 +368,7 @@ enum class StrId : uint16_t {
   STR_OPEN,
   STR_DOWNLOAD,
   STR_RETRY,
+  STR_TAP_TO_RETRY,
   STR_YES,
   STR_NO,
   STR_SHOW,
@@ -332,6 +381,9 @@ enum class StrId : uint16_t {
   STR_DIR_UP,
   STR_DIR_DOWN,
   STR_OK_BUTTON,
+  STR_KEY_SHIFT,
+  STR_KEY_MODE_SYMBOLS,
+  STR_KEY_MODE_ABC,
   STR_SLEEP_COVER_FILTER,
   STR_FILTER_CONTRAST,
   STR_CUSTOMISE_STATUS_BAR,
@@ -373,10 +425,8 @@ enum class StrId : uint16_t {
   STR_THEME_ROUNDEDRAFF,
   STR_THEME_LYRA_EXTENDED,
   STR_THEME_AURORA,
-  STR_NOW_READING,
   STR_HOME_CONTINUE,
   STR_HOME_EMPTY_HINT,
-  STR_BOOK_PROGRESS,
   STR_LIBRARY,
   STR_SHOW_BUTTON_HINTS,
   STR_BUTTON_HINTS_FRONT_ONLY,
@@ -423,7 +473,6 @@ enum class StrId : uint16_t {
   STR_PAGES_SEPARATOR,
   STR_BOOK_PREFIX,
   STR_CALIBRE_URL_HINT,
-  STR_PERCENT_STEP_HINT,
   STR_SYNCING_TIME,
   STR_CALC_HASH,
   STR_HASH_FAILED,
@@ -442,6 +491,7 @@ enum class StrId : uint16_t {
   STR_NO_REMOTE_MSG,
   STR_UPLOAD_PROMPT,
   STR_UPLOAD_SUCCESS,
+  STR_ALREADY_SYNCED,
   STR_SYNC_FAILED_MSG,
   STR_SAVE_PROGRESS_FAILED,
   STR_SECTION_PREFIX,
@@ -455,6 +505,7 @@ enum class StrId : uint16_t {
   STR_DROP_CAP_FONT_DEFAULT,
   STR_OPDS_SERVER_URL,
   STR_PWR_BTN_FOOTNOTE_BACK,
+  STR_BACK_SHORT_TO_FILE_BROWSER,
   STR_SET_SLEEP_COVER,
   STR_FOOTNOTES,
   STR_NO_FOOTNOTES,
@@ -462,12 +513,19 @@ enum class StrId : uint16_t {
   STR_SCREENSHOT_BUTTON,
   STR_SLEEP_TIMER_VALUE_FORMAT,
   STR_SLEEP_NEVER,
-  STR_SLEEP_TIMER_STEP_HINT,
+  STR_STEP_HINT_FRONT,
+  STR_STEP_HINT_SIDE,
   STR_ADD_SERVER,
   STR_SERVER_NAME,
   STR_NO_SERVERS,
   STR_DELETE_SERVER,
   STR_OPDS_SERVERS,
+  STR_OPDS_DOWNLOAD_FOLDER,
+  STR_OPDS_FILENAME_FORMAT,
+  STR_FMT_AUTHOR_TITLE,
+  STR_FMT_TITLE_AUTHOR,
+  STR_FMT_TITLE,
+  STR_OPDS_SD_ROOT,
   STR_AUTO_TURN_ENABLED,
   STR_AUTO_TURN_PAGES_PER_MIN,
   STR_MANAGE_FONTS,
@@ -578,6 +636,16 @@ inline LangStrings getLanguageStrings(Language lang) {
       return {i18n_strings::STRINGS_SK_DATA, i18n_strings::OFFSETS_SK};
     case Language::VI:
       return {i18n_strings::STRINGS_VI_DATA, i18n_strings::OFFSETS_VI};
+    case Language::NB:
+      return {i18n_strings::STRINGS_NB_DATA, i18n_strings::OFFSETS_NB};
+    case Language::P2:
+      return {i18n_strings::STRINGS_P2_DATA, i18n_strings::OFFSETS_P2};
+    case Language::AR:
+      return {i18n_strings::STRINGS_AR_DATA, i18n_strings::OFFSETS_AR};
+    case Language::BS:
+      return {i18n_strings::STRINGS_BS_DATA, i18n_strings::OFFSETS_BS};
+    case Language::ID:
+      return {i18n_strings::STRINGS_ID_DATA, i18n_strings::OFFSETS_ID};
     default:
       return {i18n_strings::STRINGS_EN_DATA, i18n_strings::OFFSETS_EN};
   }
@@ -586,34 +654,39 @@ inline LangStrings getLanguageStrings(Language lang) {
 // Helper function to get language count
 constexpr uint8_t getLanguageCount() { return static_cast<uint8_t>(Language::_COUNT); }
 
-// Sorted language indices by code (auto-generated by gen_i18n.py)
+// Sorted language indices by native name (auto-generated by gen_i18n.py)
 //    0: EN   English
-//    1: BE   Беларуская
-//    2: CA   Català
-//    3: CAV  Valencià
-//    4: CS   Čeština
-//    5: DA   Dansk
-//    6: DE   Deutsch
-//    7: ES   Español
-//    8: FI   Suomi
-//    9: FR   Français
-//   10: HE   עברית
-//   11: HU   Magyar
-//   12: IT   Italiano
-//   13: KK   Қазақша
-//   14: LT   Lietuvių
-//   15: NL   Nederlands
-//   16: PL   Polski
-//   17: PT   Português (Brasil)
-//   18: RO   Română
-//   19: RU   Русский
-//   20: SI   Slovenščina
-//   21: SK   Slovenčina
-//   22: SV   Svenska
-//   23: TR   Türkçe
-//   24: UK   Українська
-//   25: VI   Tiếng Việt
-constexpr uint8_t SORTED_LANGUAGE_INDICES[] = {0, 11, 9, 22, 4, 15, 3, 1, 14, 2, 23, 19, 12, 18, 20, 16, 13, 5, 8, 6, 21, 24, 7, 17, 10, 25};
+//    1: ID   Bahasa Indonesia
+//    2: BS   Bosanski
+//    3: CA   Català
+//    4: DA   Dansk
+//    5: DE   Deutsch
+//    6: ES   Español
+//    7: FR   Français
+//    8: IT   Italiano
+//    9: LT   Lietuvių
+//   10: HU   Magyar
+//   11: NL   Nederlands
+//   12: NB   Norsk bokmål
+//   13: PL   Polski
+//   14: PT   Português (Brasil)
+//   15: P2   Português (Portugal)
+//   16: RO   Română
+//   17: SK   Slovenčina
+//   18: SI   Slovenščina
+//   19: FI   Suomi
+//   20: SV   Svenska
+//   21: VI   Tiếng Việt
+//   22: TR   Türkçe
+//   23: CAV  Valencià
+//   24: CS   Čeština
+//   25: BE   Беларуская
+//   26: RU   Русский
+//   27: UK   Українська
+//   28: KK   Қазақша
+//   29: HE   עברית
+//   30: AR   العربية
+constexpr uint8_t SORTED_LANGUAGE_INDICES[] = {0, 30, 29, 9, 15, 3, 1, 2, 12, 20, 19, 16, 26, 13, 5, 27, 8, 24, 21, 14, 7, 25, 17, 22, 4, 11, 6, 10, 18, 23, 28};
 
 static_assert(sizeof(SORTED_LANGUAGE_INDICES) / sizeof(SORTED_LANGUAGE_INDICES[0]) == getLanguageCount(),
               "SORTED_LANGUAGE_INDICES size mismatch");
