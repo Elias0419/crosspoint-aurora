@@ -662,6 +662,15 @@ int ParsedText::lineLeftInset(const size_t lineOrdinal, const GfxRenderer& rende
   return resolveFirstLineIndent(lineOrdinal == 0, renderer, fontId);
 }
 
+std::string ParsedText::getPlainText() const {
+  std::string out;
+  for (size_t i = 0; i < words.size(); ++i) {
+    if (i > 0 && !wordContinues[i]) out += ' ';
+    out += words[i];
+  }
+  return out;
+}
+
 bool ParsedText::buildDropCapPrefix(std::string& outText, uint32_t& letterCp, EpdFontFamily::Style& letterStyle) const {
   outText.clear();
   constexpr int MAX_LEADING_PUNCT = 2;
@@ -739,7 +748,14 @@ std::vector<size_t> ParsedText::computeDropCapLineBreaks(const GfxRenderer& rend
         spacing = renderer.getKerning(fontId, lastCodepoint(words[currentIndex - 1]),
                                       firstCodepoint(words[currentIndex]), wordStyles[currentIndex - 1]);
       }
-      const int candidateWidth = spacing + wordWidths[currentIndex];
+      // Small-caps first line: break against the (wider) upper-case widths so the caps
+      // don't run past the margin. extractLine then uppercases and re-measures line 0 to
+      // match. Only line 0 is affected; later lines use their real lower-case widths.
+      uint16_t wordW = wordWidths[currentIndex];
+      if (smallCapsFirstLine_ && lineOrdinal == 0) {
+        wordW = measureWordWidth(renderer, fontId, smallCapsUppercase(words[currentIndex]), wordStyles[currentIndex]);
+      }
+      const int candidateWidth = spacing + wordW;
 
       if (lineWidth + candidateWidth <= effectivePageWidth) {
         lineWidth += candidateWidth;
@@ -849,8 +865,9 @@ void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fo
   auto wordWidths = calculateWordWidths(renderer, fontId);
 
   std::vector<size_t> lineBreakIndices;
-  if (dropCap_) {
-    // Drop-cap paragraphs need a per-line-ordinal inset, which the DP breaker can't take.
+  if (dropCap_ || smallCapsFirstLine_) {
+    // Drop caps need a per-line-ordinal inset and small caps a wider first line; the DP
+    // breaker can take neither, so lay these out line-by-line with the greedy breaker.
     lineBreakIndices =
         computeDropCapLineBreaks(renderer, fontId, pageWidth, wordWidths, wordContinues, hyphenationEnabled);
   } else if (hyphenationEnabled) {

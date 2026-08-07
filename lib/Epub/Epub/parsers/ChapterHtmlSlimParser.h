@@ -64,6 +64,18 @@ class ChapterHtmlSlimParser {
   // only the opening paragraph gets it.
   bool dropCapArmed = false;
   bool dropCapDone = false;
+  // Cross-paragraph wrap: a cap can be taller than its own (short) paragraph, so the leading
+  // lines of the following paragraphs that fall within the cap's vertical span are inset too.
+  // Activated when the cap line is placed (addLineToPage); cleared past the span or on a page
+  // break. dropCapWrapInsetWidth is stashed from the committed cap's insetWidth.
+  bool dropCapWrapActive = false;
+  int dropCapWrapBottomY = 0;
+  int dropCapWrapInsetWidth = 0;
+  // Chapter-title dedup: some books print the title as an <h*> AND repeat it as the first
+  // <p>; the duplicate is dropped so the drop cap lands on the real opening line.
+  bool currentBlockIsHeading = false;
+  std::string chapterTitle;
+  bool chapterTitleConsumed = false;
   const CssParser* cssParser;
   bool embeddedStyle;
   uint8_t imageRendering;

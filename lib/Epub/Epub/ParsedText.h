@@ -138,6 +138,9 @@ class ParsedText {
   // words. Returns the prefix (NFC, ready to render), the cap letter, and its style.
   // False if the leading run has no codepoint to cap.
   bool buildDropCapPrefix(std::string& outText, uint32_t& letterCp, EpdFontFamily::Style& letterStyle) const;
+  // The block's words joined into plain text (a space before each non-glued word). Used to
+  // match a body paragraph against the chapter heading for the drop-cap title dedup.
+  std::string getPlainText() const;
   void layoutAndExtractLines(const GfxRenderer& renderer, int fontId, uint16_t viewportWidth,
                              const std::function<void(std::shared_ptr<TextBlock>, uint32_t)>& processLine,
                              bool includeLastLine = true, const DropCapSpec* dropCap = nullptr,
