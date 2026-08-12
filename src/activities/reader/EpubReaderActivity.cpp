@@ -1958,7 +1958,18 @@ void EpubReaderActivity::openOverlay(Overlay target) {
     default:
       break;
   }
-  requestUpdate();
+  panelHoldJumped = false;
+
+  // The page is already on screen and still in the framebuffer, so paint the chrome straight
+  // onto it and push one fast refresh -- the same path the selection uses. requestUpdate()
+  // would re-render the whole page first: slow (every line re-drawn, drop-cap glyph re-fetched
+  // from the SD face) and visibly wrong, since that repaint lands before the overlay does.
+  if (section) {
+    renderOverlay();
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+  } else {
+    requestUpdate();
+  }
 }
 
 void EpubReaderActivity::renderOverlay() {
@@ -2094,16 +2105,34 @@ void EpubReaderActivity::handleOverlayInput() {
     return;
   }
 
-  // Up/Down (side) and Left/Right (front) all move the selection between rows.
+  // Up/Down (side) and Left/Right (front) move the selection: a tap steps one row, holding
+  // past PANEL_HOLD_MS jumps PANEL_HOLD_STEP rows in one go, which is how you cross a
+  // hundreds-of-chapters contents list without a press per row. The jump fires once on the
+  // hold and swallows the release that ends it, so it never doubles up with the tap step.
   if (count > 0) {
-    if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
-        mappedInput.wasReleased(MappedInputManager::Button::Left)) {
-      panelIndex = ButtonNavigator::previousIndex(panelIndex, count);
+    const bool up = mappedInput.isPressed(MappedInputManager::Button::Up) ||
+                    mappedInput.isPressed(MappedInputManager::Button::Left);
+    const bool down = mappedInput.isPressed(MappedInputManager::Button::Down) ||
+                      mappedInput.isPressed(MappedInputManager::Button::Right);
+    if (!panelHoldJumped && (up || down) && mappedInput.getHeldTime() >= PANEL_HOLD_MS) {
+      const int step = down ? PANEL_HOLD_STEP : -PANEL_HOLD_STEP;
+      panelIndex = std::clamp(panelIndex + step, 0, count - 1);
+      panelHoldJumped = true;
       fastRedraw();
-    } else if (mappedInput.wasReleased(MappedInputManager::Button::Down) ||
-               mappedInput.wasReleased(MappedInputManager::Button::Right)) {
-      panelIndex = ButtonNavigator::nextIndex(panelIndex, count);
-      fastRedraw();
+      return;
+    }
+
+    const bool releasedUp = mappedInput.wasReleased(MappedInputManager::Button::Up) ||
+                            mappedInput.wasReleased(MappedInputManager::Button::Left);
+    const bool releasedDown = mappedInput.wasReleased(MappedInputManager::Button::Down) ||
+                              mappedInput.wasReleased(MappedInputManager::Button::Right);
+    if (releasedUp || releasedDown) {
+      if (!panelHoldJumped) {
+        panelIndex = releasedUp ? ButtonNavigator::previousIndex(panelIndex, count)
+                                : ButtonNavigator::nextIndex(panelIndex, count);
+        fastRedraw();
+      }
+      panelHoldJumped = false;
     }
   }
 }
@@ -2304,9 +2333,9 @@ void EpubReaderActivity::openClassicReaderMenu() {
     bookProgress = epub->calculateProgress(currentSpineIndex, chapterProgress) * 100.0f;
   }
   const int bookProgressPercent = clampPercent(static_cast<int>(bookProgress + 0.5f));
-  startActivityForResult(std::make_unique<EpubReaderMenuActivity>(renderer, mappedInput, epub->getTitle(), currentPage,
-                                                                  totalPages, bookProgressPercent, SETTINGS.orientation,
-                                                                  !currentPageFootnotes.empty(), !cachedBookmarks.empty()),
+  startActivityForResult(std::make_unique<EpubReaderMenuActivity>(
+                             renderer, mappedInput, epub->getTitle(), currentPage, totalPages, bookProgressPercent,
+                             SETTINGS.orientation, !currentPageFootnotes.empty(), !cachedBookmarks.empty()),
                          [this](const ActivityResult& result) {
                            // Always apply orientation change even if the menu was cancelled
                            const auto& menu = std::get<MenuResult>(result.data);
