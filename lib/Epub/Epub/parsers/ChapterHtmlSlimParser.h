@@ -148,6 +148,9 @@ class ChapterHtmlSlimParser {
 
   void updateEffectiveInlineStyle();
   void startNewTextBlock(const BlockStyle& blockStyle);
+  // Hands a pending drop-cap arm to the block that will hold the paragraph's text,
+  // whether startNewTextBlock allocated a fresh block or reused an empty one.
+  void takeDropCapArm();
   void flushPendingAnchor();
   void flushPartWordBuffer();
   void setCurrentPageVisibleOffset(uint32_t offset);

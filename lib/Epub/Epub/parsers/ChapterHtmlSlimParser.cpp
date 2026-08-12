@@ -333,6 +333,18 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
   listItemBulletOnly = false;
 }
 
+// A <p> arms the chapter-opening treatment (drop cap / small-caps first line); whichever
+// block ends up holding that paragraph's text has to claim it. That includes the empty
+// block reused below instead of a fresh one -- a chapter opening as <h1>…</h1><p>… leaves
+// exactly such a block behind -- otherwise the arm survives into the *next* paragraph and
+// the enlarged initial lands one paragraph too late.
+void ChapterHtmlSlimParser::takeDropCapArm() {
+  if (dropCapArmed && currentTextBlock) {
+    currentTextBlock->setDropCapCandidate(true);
+    dropCapArmed = false;
+  }
+}
+
 // start a new text block if needed
 void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
   nextWordContinues = false;  // New block = new paragraph, no continuation
@@ -356,6 +368,7 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
 
       currentTextBlock->setBlockStyle(style.getCombinedBlockStyle(incoming, BlockStyle::CombineAxis::Vertical));
 
+      takeDropCapArm();
       flushPendingAnchor();
       return;
     }
@@ -367,6 +380,7 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
       const auto style = currentTextBlock->getBlockStyle();
       currentTextBlock->setBlockStyle(style.getCombinedBlockStyle(blockStyle, BlockStyle::CombineAxis::Vertical));
       listItemBulletOnly = false;
+      takeDropCapArm();
       flushPendingAnchor();
       return;
     }
@@ -381,10 +395,7 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
   listItemBulletOnly = false;
   // Mark this block as the drop-cap candidate if a <p> just armed it. dropCapDone is not
   // set here: makePages commits the cap only once, on the paragraph it actually lands on.
-  if (dropCapArmed && currentTextBlock) {
-    currentTextBlock->setDropCapCandidate(true);
-    dropCapArmed = false;
-  }
+  takeDropCapArm();
 }
 
 void ChapterHtmlSlimParser::emitHorizontalRule(const BlockStyle& blockStyle) {
@@ -1865,7 +1876,7 @@ void ChapterHtmlSlimParser::makePages() {
         dropCapSpec.lineSpan = DROPCAP_LINE_SPAN;
         dropCapSpec.insetWidth = static_cast<uint16_t>(capAdvance * scale + spaceWidth);
         dropCapPtr = &dropCapSpec;
-        dropCapDone = true;                            // committed; later paragraphs won't re-arm
+        dropCapDone = true;                              // committed; later paragraphs won't re-arm
         dropCapWrapInsetWidth = dropCapSpec.insetWidth;  // stash for wrapping following paragraphs
       }
     }
