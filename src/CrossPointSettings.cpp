@@ -99,6 +99,13 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
   if (dictionaryName[0] != '\0') {
     doc["dictionaryName"] = dictionaryName;
   }
+  // Drop-cap face name (from the standalone /.dropcap registry) — its SettingsList
+  // entry is device-only (dynamic getter/setter over the registry), so save manually.
+  // Without this the selection is lost on every reboot and the reader silently falls
+  // back to integer-scaling the body glyph.
+  if (dropCapFontName[0] != '\0') {
+    doc["dropCapFontName"] = dropCapFontName;
+  }
 
   // Language -- managed by LanguageSelectActivity, not in SettingsList.
   // Stored as ISO code string ("EN", "DE", ...) for stability across enum reorders.
@@ -215,6 +222,8 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   }
   // Dictionary folder name — uses dynamic getter/setter in SettingsList, load manually
   copyToField(dictionaryName, doc["dictionaryName"] | "", sizeof(dictionaryName));
+  // Drop-cap face name — device-only setting, load manually (see toJson).
+  copyToField(dropCapFontName, doc["dropCapFontName"] | "", sizeof(dropCapFontName));
 
   // Language -- stored as code string for stability across enum reorders.
   if (doc["language"].is<const char*>()) {

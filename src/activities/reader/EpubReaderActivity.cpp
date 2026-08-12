@@ -1065,6 +1065,12 @@ void EpubReaderActivity::toggleAutoPageTurn(const uint8_t selectedPageTurnOption
 }
 
 void EpubReaderActivity::pageTurn(bool isForwardTurn) {
+  // A deliberate turn retires any pending reposition: the reader has moved off the resume
+  // position, so applying it later (when the background build finishes and unblocks
+  // applyDeferredReposition) would drag them back to where the chapter was opened.
+  cachedVisibleTextOffset.reset();
+  cachedChapterTotalPageCount = 0;
+
   if (isForwardTurn) {
     // Advance within the section while there are (or may still be) more pages: either a built
     // page ahead, or the section is still building (windowed), in which case more pages exist
@@ -1095,6 +1101,12 @@ void EpubReaderActivity::pageTurn(bool isForwardTurn) {
         section.reset();
       }
     }
+  }
+  // Keep the resume hint on the page actually being read: if the section is dropped later
+  // (a failed background build tick, a settings reflow), render() rebuilds from
+  // nextPageNumber, and a stale one restarts the chapter from the top.
+  if (section) {
+    nextPageNumber = section->currentPage;
   }
   lastPageTurnTime = millis();
   requestUpdate();
@@ -1360,6 +1372,13 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     if (offsetJump.has_value()) {
       if (const auto offsetPage = section->getPageForVisibleTextOffset(*offsetJump)) {
         section->currentPage = *offsetPage;
+        // Landed: the reposition is done, so retire it here. applyDeferredReposition() below
+        // is skipped while the section is still building (the common case -- only the pages up
+        // to this one are laid out), which used to leave the offset armed. It then fired when
+        // the background build finished, several page turns later, yanking the reader back to
+        // this landing page.
+        cachedVisibleTextOffset.reset();
+        cachedChapterTotalPageCount = 0;
       }
     }
     pendingOffsetJump.reset();  // one-shot explicit jump: consumed on this render
