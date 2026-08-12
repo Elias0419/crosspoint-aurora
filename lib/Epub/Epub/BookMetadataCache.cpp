@@ -403,6 +403,33 @@ void BookMetadataCache::createSpineEntry(const std::string& href) {
   spineCount++;
 }
 
+// Last-resort match for a TOC href that does not resolve against any spine href.
+// Real books ship nav documents whose links are relative to a directory the nav file
+// does not live in (nav.xhtml at OEBPS/ pointing at "chuong-0001.xhtml" while the spine
+// carries "text/chuong-0001.xhtml"), which would leave every contents row dead. In-book
+// links already accept a filename-only match (Epub::resolveHrefToSpineIndex), so the
+// contents index is no less forgiving. Walked only when the exact match failed, so a
+// well-formed book never pays for it.
+int16_t BookMetadataCache::findSpineIndexByFilename(const std::string& href) {
+  const auto filenameOf = [](const std::string& path) {
+    const size_t slash = path.find_last_of('/');
+    return slash != std::string::npos ? path.substr(slash + 1) : path;
+  };
+  const std::string filename = filenameOf(href);
+  if (filename.empty() || !spineFile) return -1;
+
+  int16_t found = -1;
+  spineFile.seek(0);
+  for (int i = 0; i < spineCount; i++) {
+    if (filenameOf(readSpineEntry(spineFile).href) == filename) {
+      found = static_cast<int16_t>(i);
+      break;
+    }
+  }
+  spineFile.seek(0);
+  return found;
+}
+
 void BookMetadataCache::createTocEntry(const std::string& title, const std::string& href, const std::string& anchor,
                                        const uint8_t level) {
   if (!buildMode || !tocFile || !spineFile) {
@@ -427,9 +454,6 @@ void BookMetadataCache::createTocEntry(const std::string& title, const std::stri
       break;
     }
 
-    if (spineIndex == -1) {
-      LOG_DBG("BMC", "createTocEntry: Could not find spine item for TOC href %s", href.c_str());
-    }
   } else {
     spineFile.seek(0);
     for (int i = 0; i < spineCount; i++) {
@@ -439,9 +463,13 @@ void BookMetadataCache::createTocEntry(const std::string& title, const std::stri
         break;
       }
     }
-    if (spineIndex == -1) {
-      LOG_DBG("BMC", "createTocEntry: Could not find spine item for TOC href %s", href.c_str());
-    }
+  }
+
+  if (spineIndex == -1) {
+    spineIndex = findSpineIndexByFilename(href);
+  }
+  if (spineIndex == -1) {
+    LOG_DBG("BMC", "createTocEntry: Could not find spine item for TOC href %s", href.c_str());
   }
 
   // Compose the title to NFC at index time so the cache stores precomposed glyphs;

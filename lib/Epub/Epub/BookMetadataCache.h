@@ -108,6 +108,8 @@ class BookMetadataCache {
   bool endContentOpfPass();
   bool beginTocPass();
   void createTocEntry(const std::string& title, const std::string& href, const std::string& anchor, uint8_t level);
+  // Filename-only spine lookup for TOC hrefs that no spine href matches exactly.
+  int16_t findSpineIndexByFilename(const std::string& href);
   bool endTocPass();
   bool endWrite();
   bool cleanupTmpFiles() const;
