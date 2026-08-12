@@ -18,7 +18,13 @@
 #include "FirmwareFlasher.h"
 
 namespace {
-constexpr char latestReleaseUrl[] = "https://api.github.com/repos/crosspoint-reader/crosspoint-reader/releases/latest";
+// This fork ships its own builds, so the update feed is the fork's releases, not
+// upstream's -- pointing at upstream would offer a firmware that overwrites aurora
+// with stock CrossPoint. The release must attach the binary as exactly "firmware.bin"
+// (ReleaseJsonParser matches on that name) and carry a plain semver tag such as
+// "1.5.1": isUpdateNewer() sscanf's three integers off the front of the tag, so a
+// leading "v" leaves it comparing garbage.
+constexpr char latestReleaseUrl[] = "https://api.github.com/repos/jetaudio/crosspoint-aurora/releases/latest";
 }  // namespace
 
 OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
@@ -68,8 +74,11 @@ bool OtaUpdater::isUpdateNewer() const {
     return false;
   }
 
-  int currentMajor, currentMinor, currentPatch;
-  int latestMajor, latestMinor, latestPatch;
+  // Zeroed because a tag that does not start with three integers leaves sscanf's
+  // outputs untouched, and comparing indeterminate values would offer an update at
+  // random. A malformed tag now simply reads as 0.0.0, i.e. never newer.
+  int currentMajor = 0, currentMinor = 0, currentPatch = 0;
+  int latestMajor = 0, latestMinor = 0, latestPatch = 0;
 
   const auto currentVersion = CROSSPOINT_VERSION;
 
