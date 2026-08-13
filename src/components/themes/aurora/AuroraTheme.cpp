@@ -353,7 +353,7 @@ void AuroraTheme::drawBottomBar(GfxRenderer& renderer, Rect barRect, const std::
   if (barCount <= 0) return;
 
   const int barTop = barRect.y;
-  renderer.drawLine(barRect.x, barTop, barRect.x + barRect.width, barTop);
+  renderer.drawLine(barRect.x, barTop, barRect.x + barRect.width - 1, barTop);  // -1: endpoints are inclusive
   const int slotW = barRect.width / barCount;
   for (int i = 0; i < barCount; ++i) {
     const int slotX = barRect.x + i * slotW;
@@ -723,8 +723,8 @@ void AuroraTheme::drawReaderToolbar(GfxRenderer& renderer, Rect screen, const Re
 
   // --- Top bar: back chevron (left), centered book title, focus indicator (right) ---
   const int topH = 50;
-  renderer.fillRect(X, Y, W, topH, false);  // clear the page text behind the bar
-  renderer.drawLine(X, Y + topH, X + W, Y + topH);
+  renderer.fillRect(X, Y, W, topH, false);              // clear the page text behind the bar
+  renderer.drawLine(X, Y + topH, X + W - 1, Y + topH);  // -1: drawLine endpoints are inclusive
 
   chevron(X + 26, Y + topH / 2, 8, true);
 
@@ -749,7 +749,7 @@ void AuroraTheme::drawReaderToolbar(GfxRenderer& renderer, Rect screen, const Re
   const int bottomH = 160;
   const int by = Y + H - bottomH;
   renderer.fillRect(X, by, W, bottomH, false);
-  renderer.drawLine(X, by, X + W, by);
+  renderer.drawLine(X, by, X + W - 1, by);
 
   // Scrub row: prev/next chapter buttons flanking a progress track + knob.
   const int btn = 34;
@@ -819,8 +819,8 @@ void AuroraTheme::drawReaderPanel(GfxRenderer& renderer, Rect screen, const char
   // Bottom sheet covering the lower part of the screen; the page stays visible above.
   const int panelTop = Y + (H * 38) / 100;
   renderer.fillRect(X, panelTop, W, (Y + H) - panelTop, false);  // clear page text behind the sheet
-  renderer.drawLine(X, panelTop, X + W, panelTop);
-  renderer.drawLine(X, panelTop + 1, X + W, panelTop + 1);  // 2px top edge
+  renderer.drawLine(X, panelTop, X + W - 1, panelTop);           // -1: drawLine endpoints are inclusive
+  renderer.drawLine(X, panelTop + 1, X + W - 1, panelTop + 1);   // 2px top edge
 
   const int titleY = panelTop + 14;
   renderer.drawText(kTitleFontId, X + P, titleY, title, true, EpdFontFamily::BOLD);

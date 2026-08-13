@@ -1557,9 +1557,12 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   }
 
   // Aurora: overlay the toolbar / panel on top of the freshly rendered page.
+  // HALF for the same reason as openOverlay: the page render above just ran the
+  // grayscale AA pass, and a FAST differential leaves the covered text ghosting
+  // gray through the chrome background.
   if (overlay != Overlay::None && GUI.ownsReaderChrome()) {
     renderOverlay();
-    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
   }
 }
 
@@ -1980,12 +1983,19 @@ void EpubReaderActivity::openOverlay(Overlay target) {
   panelHoldJumped = false;
 
   // The page is already on screen and still in the framebuffer, so paint the chrome straight
-  // onto it and push one fast refresh -- the same path the selection uses. requestUpdate()
-  // would re-render the whole page first: slow (every line re-drawn, drop-cap glyph re-fetched
-  // from the SD face) and visibly wrong, since that repaint lands before the overlay does.
+  // onto it and push one refresh. requestUpdate() would re-render the whole page first: slow
+  // (every line re-drawn, drop-cap glyph re-fetched from the SD face) and visibly wrong, since
+  // that repaint lands before the overlay does.
+  //
+  // HALF, not FAST: the page under the chrome was just driven by the grayscale AA waveform,
+  // and a FAST differential can't fully erase that charge -- the covered text ghosts gray
+  // through the toolbar/panel background (same mechanism as #2190's image ghosting). HALF is
+  // the X4's ghost-cleanup waveform: it drives every pixel to its target regardless of
+  // residue. In-overlay navigation redraws (fastRedraw) stay FAST -- they repaint over
+  // chrome that FAST itself drew, where a differential is clean.
   if (section) {
     renderOverlay();
-    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
   } else {
     requestUpdate();
   }
