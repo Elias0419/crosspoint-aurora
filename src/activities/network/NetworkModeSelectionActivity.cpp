@@ -3,155 +3,112 @@
 #include <GfxRenderer.h>
 #include <I18n.h>
 
-#include <vector>
-
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
 #include "activities/util/HomeTabBar.h"
 #include "components/UITheme.h"
-#include "fontIds.h"
+#include "components/UiAppHelpers.h"
+
+namespace fui = freeink::ui;
 
 namespace {
-constexpr int MENU_ITEM_COUNT = 3;
+constexpr StrId menuItems[NetworkModeSelectionActivity::MENU_ITEM_COUNT] = {
+    StrId::STR_JOIN_NETWORK, StrId::STR_CALIBRE_WIRELESS, StrId::STR_CREATE_HOTSPOT};
+constexpr StrId menuDescs[NetworkModeSelectionActivity::MENU_ITEM_COUNT] = {
+    StrId::STR_JOIN_DESC, StrId::STR_CALIBRE_DESC, StrId::STR_HOTSPOT_DESC};
+constexpr UIIcon menuIcons[NetworkModeSelectionActivity::MENU_ITEM_COUNT] = {UIIcon::Wifi, UIIcon::Library,
+                                                                             UIIcon::Hotspot};
 }  // namespace
 
-void NetworkModeSelectionActivity::onEnter() {
-  Activity::onEnter();
-
-  // Reset selection
-  selectedIndex = 0;
-
-  // Trigger first update
-  requestUpdate();
+NetworkModeSelectionActivity::NetworkModeSelectionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
+    : UiListActivity("NetworkModeSelection", renderer, mappedInput) {
+  // Entirely static, so built once here rather than every buildScreen() call.
+  for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+    fui::ListItem item;
+    item.label = I18N.get(menuItems[i]);
+    item.subtitle = I18N.get(menuDescs[i]);
+    item.icon = listIconFor(menuIcons[i], 32);  // subtitle rows carry the larger icon
+    item.actionValue = static_cast<int16_t>(i);
+    rowItems_[i] = item;
+  }
 }
 
-void NetworkModeSelectionActivity::onExit() { Activity::onExit(); }
+int NetworkModeSelectionActivity::listCount() const { return MENU_ITEM_COUNT; }
 
-void NetworkModeSelectionActivity::loop() {
-  auto selectCurrent = [this] {
-    NetworkMode mode = NetworkMode::JOIN_NETWORK;
-    if (selectedIndex == 1) {
-      mode = NetworkMode::CONNECT_CALIBRE;
-    } else if (selectedIndex == 2) {
-      mode = NetworkMode::CREATE_HOTSPOT;
-    }
-    onModeSelected(mode);
-  };
+// Aurora hosts this screen as the Transfer tab of the bottom bar, so it carries
+// the tab's name there and the stand-alone screen title everywhere else.
+const char* NetworkModeSelectionActivity::headerTitle() const {
+  return GUI.ownsHomeLayout() ? tr(STR_TAB_TRANSFER) : tr(STR_FILE_TRANSFER);
+}
 
-  // Handle back button - cancel. Use a release edge (matching the parent screen) so a
-  // single press isn't handled here (on press) and again by the parent (on release),
-  // popping straight back to the library. See LanguageSelectActivity.
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-    onCancel();
+bool NetworkModeSelectionActivity::handleCustomInput() {
+  // Aurora: this is the Transfer tab's landing screen, so front Left/Right walk
+  // the bottom bar (the base's list navigation keeps the side Up/Down buttons).
+  return GUI.ownsHomeLayout() && HomeTabBar::handleLeftRight(mappedInput, HomeTabBar::Transfer);
+}
+
+// The front Left/Right pair belongs to the bottom bar in tab mode, so only the side
+// buttons move the selection there (the base's logical Nav pair folds them in).
+void NetworkModeSelectionActivity::navigateButtons() {
+  if (!GUI.ownsHomeLayout()) {
+    UiListActivity::navigateButtons();
     return;
   }
-
-  // Aurora: this is the Transfer tab's landing screen, so Left/Right switch tabs.
-  const bool tabMode = GUI.ownsHomeLayout();
-  if (tabMode && HomeTabBar::handleLeftRight(mappedInput, HomeTabBar::Transfer)) return;
-
-  // Handle confirm button - select current option
-  if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-    selectCurrent();
-    return;
-  }
-
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
-  const int contentHeight =
-      renderer.getScreenHeight() - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing * 2;
-  switch (handleListTouch(selectedIndex, MENU_ITEM_COUNT, contentTop, contentHeight, true)) {
-    case ListTouchResult::Activated:
-      selectCurrent();
-      return;
-    case ListTouchResult::Consumed:
-      return;
-    case ListTouchResult::None:
-      break;
-  }
-
-  // Navigation: side Up/Down (front Left/Right are reserved for tabs in Aurora).
-  if (tabMode) {
-    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Up}, [this] {
-      selectedIndex = ButtonNavigator::previousIndex(selectedIndex, MENU_ITEM_COUNT);
-      requestUpdate();
-    });
-    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Down}, [this] {
-      selectedIndex = ButtonNavigator::nextIndex(selectedIndex, MENU_ITEM_COUNT);
-      requestUpdate();
-    });
-    return;
-  }
-
-  // Handle navigation
-  buttonNavigator.onNext([this] {
-    selectedIndex = ButtonNavigator::nextIndex(selectedIndex, MENU_ITEM_COUNT);
-    requestUpdate();
+  buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Up}, [this] {
+    moveSelectionTo(ButtonNavigator::previousIndex(activeNav().selected, MENU_ITEM_COUNT));
   });
-
-  buttonNavigator.onPrevious([this] {
-    selectedIndex = ButtonNavigator::previousIndex(selectedIndex, MENU_ITEM_COUNT);
-    requestUpdate();
+  buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Down}, [this] {
+    moveSelectionTo(ButtonNavigator::nextIndex(activeNav().selected, MENU_ITEM_COUNT));
   });
 }
 
-void NetworkModeSelectionActivity::render(RenderLock&&) {
-  renderer.clearScreen();
+void NetworkModeSelectionActivity::drawFooter() {
+  if (!GUI.ownsHomeLayout()) {
+    UiListActivity::drawFooter();
+    return;
+  }
+  // Tab mode: front buttons move between tabs, the side pair moves the selection.
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_LEFT), tr(STR_DIR_RIGHT));
+  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  GUI.drawSideButtonHints(renderer, tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  HomeTabBar::draw(renderer, renderer.getScreenWidth(), renderer.getScreenHeight(), HomeTabBar::Transfer);
+}
 
+void NetworkModeSelectionActivity::activateIndex(const int index) {
+  // Selection leaves this screen; a lingering flash would gray an unrelated
+  // element on the next render.
+  app.clearTapFlash();
+  nav.selected = index;
+
+  NetworkMode mode = NetworkMode::JOIN_NETWORK;
+  if (index == 1) {
+    mode = NetworkMode::CONNECT_CALIBRE;
+  } else if (index == 2) {
+    mode = NetworkMode::CREATE_HOTSPOT;
+  }
+  onModeSelected(mode);
+}
+
+void NetworkModeSelectionActivity::buildScreen(UiScreen& screen) {
   const auto& metrics = UITheme::getInstance().getMetrics();
-  const auto pageWidth = renderer.getScreenWidth();
-  const auto pageHeight = renderer.getScreenHeight();
-
-  // Aurora draws the persistent tab bar here (Transfer tab) and only reserves the
-  // hint row the user actually shows.
+  // Content below the GUI.drawHeader band, above the button hints — plus the
+  // Aurora bottom bar, and minus the hint row when the user hid it.
   const bool tabMode = GUI.ownsHomeLayout();
-  const int barH = tabMode ? GUI.bottomBarHeight() : 0;
   const int hintH = (tabMode && !SETTINGS.showButtonHints) ? 0 : metrics.buttonHintsHeight;
+  const int bottom = hintH + (tabMode ? GUI.bottomBarHeight() : 0);
+  screen.setContentMargin(fui::Insets{static_cast<int16_t>(metrics.topPadding + metrics.headerHeight), 0,
+                                      static_cast<int16_t>(bottom), 0});
+  screen.spacer(static_cast<int16_t>(metrics.verticalSpacing));
 
-  // Menu items and descriptions
-  static constexpr StrId menuItems[MENU_ITEM_COUNT] = {StrId::STR_JOIN_NETWORK, StrId::STR_CALIBRE_WIRELESS,
-                                                       StrId::STR_CREATE_HOTSPOT};
-  static constexpr StrId menuDescs[MENU_ITEM_COUNT] = {StrId::STR_JOIN_DESC, StrId::STR_CALIBRE_DESC,
-                                                       StrId::STR_HOTSPOT_DESC};
-  static constexpr UIIcon menuIcons[MENU_ITEM_COUNT] = {UIIcon::Wifi, UIIcon::Library, UIIcon::Hotspot};
-
-  const char* title = tabMode ? tr(STR_TAB_TRANSFER) : tr(STR_FILE_TRANSFER);
-
-  if (GUI.ownsSettingsLayout()) {
-    // Render the transfer options as a settings-style card list so this landing
-    // screen matches the Settings page. The ▸ chevron marks each entry as "opens".
-    std::vector<SettingsListItem> items;
-    items.reserve(MENU_ITEM_COUNT);
-    for (int i = 0; i < MENU_ITEM_COUNT; ++i) {
-      SettingsListItem it;
-      it.text = I18N.get(menuItems[i]);
-      it.selected = (i == selectedIndex);
-      it.showChevron = true;
-      items.push_back(it);
-    }
-    GUI.drawSettingsScreen(renderer, Rect{0, 0, pageWidth, pageHeight - hintH - barH}, title, items);
-  } else {
-    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, title);
-    const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
-    const int contentHeight = pageHeight - contentTop - hintH - metrics.verticalSpacing * 2 - barH;
-    GUI.drawList(
-        renderer, Rect{0, contentTop, pageWidth, contentHeight}, static_cast<int>(MENU_ITEM_COUNT), selectedIndex,
-        [](int index) { return std::string(I18N.get(menuItems[index])); },
-        [](int index) { return std::string(I18N.get(menuDescs[index])); }, [](int index) { return menuIcons[index]; });
-  }
-
-  // Draw help text at bottom
-  if (tabMode) {
-    const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_LEFT), tr(STR_DIR_RIGHT));
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-    GUI.drawSideButtonHints(renderer, tr(STR_DIR_UP), tr(STR_DIR_DOWN));
-    HomeTabBar::draw(renderer, pageWidth, pageHeight, HomeTabBar::Transfer);
-  } else {
-    const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-  }
-
-  renderer.displayBuffer();
+  // rowItems_ was built once in the constructor and is reused here on every
+  // repaint.
+  fui::ListProps props;
+  props.items = rowItems_;
+  props.count = static_cast<uint16_t>(MENU_ITEM_COUNT);
+  props.action = ACTION_ROW;
+  props.inputMask = fui::InputTouch;  // physical buttons stay in loop()
+  syncListViewport(screen, props, /*hasSubtitle=*/true);
+  screen.list(props);
 }
 
 void NetworkModeSelectionActivity::onModeSelected(NetworkMode mode) {

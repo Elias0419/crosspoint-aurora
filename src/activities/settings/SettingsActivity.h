@@ -6,9 +6,8 @@
 #include <vector>
 
 #include "CrossPointSettings.h"
-#include "activities/Activity.h"
+#include "activities/UiTabListActivity.h"
 #include "components/OptionPopup.h"
-#include "util/ButtonNavigator.h"
 
 enum class SettingType { TOGGLE, ENUM, ACTION, VALUE, STRING };
 
@@ -25,7 +24,6 @@ enum class SettingAction {
   Language,
   DownloadFonts,
   TextSettings,
-  OpenAdvanced,  // Aurora: open the Advanced Settings sub-page
 };
 
 struct SettingInfo {
@@ -151,11 +149,8 @@ struct SettingInfo {
   }
 };
 
-class SettingsActivity final : public Activity {
-  ButtonNavigator buttonNavigator;
-
+class SettingsActivity final : public UiTabListActivity {
   int selectedCategoryIndex = 0;  // Currently selected category
-  int selectedSettingIndex = 0;
   int settingsCount = 0;
 
   // Per-category settings derived from shared list + device-only actions
@@ -165,47 +160,49 @@ class SettingsActivity final : public Activity {
   std::vector<SettingInfo> systemSettings;
   const std::vector<SettingInfo>* currentSettings = nullptr;
 
-  // Aurora flat-list model: section headers interleaved with value rows.
-  struct AuroraEntry {
-    bool isHeader = false;
-    StrId header = StrId::STR_NONE_OPT;  // section label when isHeader
-    SettingInfo setting;                 // value/action row when !isHeader
-  };
-  const bool advancedPage;  // true = the "Advanced Settings" sub-page
-  std::vector<AuroraEntry> auroraEntries;
-  int auroraSelectableCount = 0;  // number of non-header rows
-  int auroraSelected = 0;         // selected row (index among non-header rows)
-
   bool preserveQuickResumeTimeoutOn = false;
   bool quickResumeTimeoutAutoEnabled = false;
 
   OptionPopup optionPopup;
 
+  // Row structure (label/actionValue) for *currentSettings, rebuilt only when
+  // the active category or a category's setting list changes
+  // (rebuildRowItems(), called from selectCategory()/rebuildSettingsLists())
+  // — not on every repaint. rowValues_ holds the live per-row value text,
+  // refreshed every buildScreen() call by assigning into the existing
+  // strings (no vector growth).
+  std::vector<std::string> rowValues_;
+  std::vector<freeink::ui::ListItem> rowItems_;
+  void rebuildRowItems();
+
   static constexpr int categoryCount = 4;
   static const StrId categoryNames[categoryCount];
 
+  // --- UiTabListActivity contract ---
+  int listCount() const override { return settingsCount; }
+  int tabCount() const override { return categoryCount; }
+  int activeTab() const override { return selectedCategoryIndex; }
+  const char* tabLabel(int index) const override { return I18N.get(categoryNames[index]); }
+  void buildScreen(UiScreen& screen) override;
+  void activateIndex(int index) override;
+  void onTabAction(int index) override;
+  void stepTab(int direction) override;
+  bool handleButtons() override;
+  bool handleCustomInput() override;
+
+  static std::string settingValueText(const SettingInfo& setting);
+  void selectCategory(int categoryIndex);
+  void applyUiSettingChange(uint8_t CrossPointSettings::* valuePtr);
+
   void enterCategory(int categoryIndex);
   void toggleCurrentSetting();
-  void activateSetting(const SettingInfo& setting);  // toggle/cycle/open a row
-  // Aurora settings: Left/Right adjust the selected setting's value (dir -1/+1);
-  // changeCategory cycles the category; settingValueText formats a row's value.
-  void adjustCurrentSetting(int direction);
-  void changeCategory(int direction);
-  std::string settingValueText(const SettingInfo& setting) const;
   void openSleepTimeoutPicker();
   void rebuildSettingsLists();
   void syncQuickResumeTimeoutForSleepScreen(bool sleepScreenChanged, bool quickResumeTimeoutChanged);
 
-  // Aurora sectioned-list helpers.
-  static bool isTopLevelSetting(StrId nameId);
-  void buildAuroraEntries();
-  const SettingInfo* auroraSelectedSetting() const;
-
  public:
-  explicit SettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool advanced = false)
-      : Activity("Settings", renderer, mappedInput), advancedPage(advanced) {}
+  explicit SettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
   void onEnter() override;
   void onExit() override;
-  void loop() override;
   void render(RenderLock&&) override;
 };

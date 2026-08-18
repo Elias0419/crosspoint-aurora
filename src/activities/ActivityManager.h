@@ -91,7 +91,7 @@ class ActivityManager {
   void goToBoot();
   void goToFullScreenMessage(std::string message, EpdFontFamily::Style style = EpdFontFamily::REGULAR);
   void goToCrashReport();
-  void goHome(HomeMenuItem initialMenuItem = HomeMenuItem::NONE);
+  void goHome(HomeMenuItem initialMenuItem = HomeMenuItem::NONE, bool cleanInitialRefresh = false);
   // Switch to one of the persistent bottom-bar tabs (0=Library/Home, 1=Browse,
   // 2=Settings, 3=Transfer); see HomeTabBar::Tab.
   void goToHomeTab(int tab);

@@ -44,12 +44,12 @@ $env:PYTHONIOENCODING="utf-8"; $env:PYTHONUTF8="1"
 python -m platformio run -e default
 ```
 - Format before commit: `./bin/clang-format-fix -g` (needs clang-format 21+).
-- First clone: `git submodule update --init --recursive` (the `open-x4-sdk` submodule is required).
-- `core.symlinks=false` is set repo-locally — `CLAUDE.md` and `.github/skills/crosspoint-reader.md` are
-  symlinks to `.skills/SKILL.md` upstream; on this fork's `aurora` branch CLAUDE.md is a regular file (this one).
+- First clone: `git submodule update --init --recursive` (the `freeink-sdk` submodule is required).
+- `core.symlinks=false` is set repo-locally — upstream ships `CLAUDE.md` as a symlink to `AGENTS.md`;
+  on this fork's `aurora` branch CLAUDE.md is a regular file (this one) and `AGENTS.md` stays upstream's.
 
 ## Firmware contribution guidelines
-The upstream contributor skills auto-load from `.skills/` (HAL/abstractions, scope-discipline, heap-discipline,
-refactor-for-review, control-flow-clarity) — see `.skills/SKILL.md`. Respect them: route through the HAL
+The upstream contributor skills auto-load from `.skills/` (HAL/abstractions, scope-discipline,
+heap-discipline, refactor-for-review, control-flow-clarity) — see `AGENTS.md`. Respect them: route through the HAL
 (HalStorage/HalGPIO/HalDisplay), render via UITheme/GUI, use `tr()` for user-facing text, and mind the
 ~380 KB RAM budget on the ESP32-C3.

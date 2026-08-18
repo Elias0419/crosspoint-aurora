@@ -34,13 +34,18 @@ namespace {
 // v35: Persist a uint32_t visible-text start offset for every page.
 // v36: Ruby and CJK justification layout changes invalidate cached word positions.
 // v37: Footnote href records grew from 96 to 256 bytes.
-// v38 (aurora): header carries the drop-cap + small-caps chapter-opening flags, so
-//      toggling either setting re-paginates (the enlarged initial / all-caps first
-//      line are baked into the laid-out pages).
-// v39 (aurora): header also carries the drop-cap font id. The chosen /.dropcap face is
-//      independent of the reader font, and its identity drives the cap's wrap inset, so
-//      changing the drop-cap font (or its size) must re-paginate too.
-constexpr uint8_t SECTION_FILE_VERSION = 39;
+// v38: Focus Reading line breaking changed — a visible hyphen/dash inside a word is now a
+//      break opportunity, and hyphenation of a focus-split word considers the whole word
+//      instead of only its regular-weight suffix. Pages cached by older versions were laid
+//      out with the previous, more restrictive break set and no longer match.
+// v39: Image top margin is clamped so a full-viewport-height image cannot
+//      overflow the page bottom; older caches can hold placements that panels
+//      with no bottom inset refuse to draw.
+// v41 (aurora): header carries the drop-cap + small-caps chapter-opening flags and the
+//      drop-cap font id, so toggling either setting — or changing the /.dropcap face,
+//      whose identity drives the cap's wrap inset — re-paginates. (v40 is upstream's;
+//      aurora skips it to stay above every published upstream version.)
+constexpr uint8_t SECTION_FILE_VERSION = 41;
 // Written into the version field while a build is in progress; patched to
 // SECTION_FILE_VERSION only when the build is finalized. An abandoned /
 // crash-interrupted .bin therefore carries version 0, which loadSectionFile rejects
