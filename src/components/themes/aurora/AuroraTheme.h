@@ -44,7 +44,11 @@ class AuroraTheme : public BaseTheme {
   void drawBottomBar(GfxRenderer& renderer, Rect barRect, const std::vector<std::string>& labels,
                      const std::vector<UIIcon>& icons, int activeTab) const override;
 
-  bool ownsSettingsLayout() const override { return true; }
+  // Settings deliberately keeps CrossPoint's stock category-tab layout (the
+  // curated flat variant hid too much behind its Advanced page and duplicated
+  // rows); Aurora only adds the home dock beneath it. drawSettingsScreen and
+  // the flat SettingsActivity branch stay dormant behind this false.
+  bool ownsSettingsLayout() const override { return false; }
   void drawSettingsScreen(GfxRenderer& renderer, Rect content, const char* title,
                           const std::vector<SettingsListItem>& items) const override;
 

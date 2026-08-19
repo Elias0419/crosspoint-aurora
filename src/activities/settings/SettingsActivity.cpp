@@ -223,6 +223,13 @@ bool SettingsActivity::handleCustomInput() {
     handleAuroraInput();
     return true;  // the flat layout owns all input; skip the tab-list base
   }
+  // Aurora home layout: the dock below the stock settings switches home tabs
+  // by tap (category switching keeps the stock paths: tap a category tab, or
+  // Confirm on the tab ring).
+  if (GUI.ownsHomeLayout() && HomeTabBar::handleTap(mappedInput, renderer, HomeTabBar::Settings)) {
+    SETTINGS.saveToFile();
+    return true;
+  }
   return false;
 }
 
@@ -734,9 +741,11 @@ std::string SettingsActivity::settingValueText(const SettingInfo& setting) {
 
 void SettingsActivity::buildScreen(UiScreen& screen) {
   const auto& metrics = UITheme::getInstance().getMetrics();
-  // Content below the GUI.drawHeader band, above the button hints.
+  // Content below the GUI.drawHeader band, above the button hints and (on
+  // Aurora) the persistent home dock.
+  const int dockH = GUI.ownsHomeLayout() ? GUI.bottomBarHeight() : 0;
   screen.setContentMargin(fui::Insets{static_cast<int16_t>(metrics.topPadding + metrics.headerHeight), 0,
-                                      static_cast<int16_t>(metrics.buttonHintsHeight), 0});
+                                      static_cast<int16_t>(metrics.buttonHintsHeight + dockH), 0});
 
   buildTabBar(screen);
 
@@ -798,6 +807,12 @@ void SettingsActivity::render(RenderLock&&) {
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+
+  // Aurora: keep the home dock under the stock settings so the other tabs
+  // stay one tap away.
+  if (GUI.ownsHomeLayout()) {
+    HomeTabBar::draw(renderer, pageWidth, renderer.getScreenHeight(), HomeTabBar::Settings);
+  }
 
   // Always use standard refresh for settings screen
   renderer.displayBuffer();

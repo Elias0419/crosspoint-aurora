@@ -301,9 +301,9 @@ void AuroraTheme::drawHomeScreen(GfxRenderer& renderer, Rect content, const std:
       const int cardY = listTop + slot * cardStride;
       const bool selected = (i == librarySelected);
 
-      // Selection: rounded light-gray pill behind the card (text stays black on top).
+      // Selection: 2px rounded outline around the card (1-bit, text stays black).
       if (selected) {
-        renderer.fillRoundedRect(cardX - 6, cardY, cardW + 12, kCardHeight, 10, Color::LightGray);
+        renderer.drawRoundedRect(cardX - 6, cardY, cardW + 12, kCardHeight, 2, 10, true);
       }
 
       // Cover on the left, vertically centered. Drawn at homeCardCoverHeight (the size its
@@ -380,8 +380,11 @@ void AuroraTheme::drawBottomBar(GfxRenderer& renderer, Rect barRect, const std::
   const int barCount = static_cast<int>(icons.size());
   if (barCount <= 0) return;
 
+  // Pure 1-bit dock: white tray with a crisp 2px border (no dithered grays
+  // anywhere in this theme).
   const Rect dock = dockRect(barRect);
-  renderer.fillRoundedRect(dock.x, dock.y, dock.width, dock.height, kDockRadius, Color::LightGray);
+  renderer.fillRoundedRect(dock.x, dock.y, dock.width, dock.height, kDockRadius, Color::White);
+  renderer.drawRoundedRect(dock.x, dock.y, dock.width, dock.height, 2, kDockRadius, true);
 
   const int slotW = dock.width / barCount;
   for (int i = 0; i < barCount; ++i) {
@@ -389,11 +392,11 @@ void AuroraTheme::drawBottomBar(GfxRenderer& renderer, Rect barRect, const std::
     const int centerX = slotX + slotW / 2;
     const int centerY = dock.y + dock.height / 2;
 
-    // Active tab: a white rounded tile lifted out of the gray tray.
+    // Active tab: a 2px rounded outline tile around the icon.
     if (i == activeTab) {
       const int tileW = std::min(slotW - 10, 64);
-      const int tileH = dock.height - 12;
-      renderer.fillRoundedRect(centerX - tileW / 2, centerY - tileH / 2, tileW, tileH, 12, Color::White);
+      const int tileH = dock.height - 14;
+      renderer.drawRoundedRect(centerX - tileW / 2, centerY - tileH / 2, tileW, tileH, 2, 12, true);
     }
 
     const uint8_t* iconBitmap = barIconBitmap(icons[i]);
@@ -471,8 +474,8 @@ void AuroraTheme::drawSettingsScreen(GfxRenderer& renderer, Rect content, const 
     const int cy = rowY + rowH / 2;
     const auto style = it.selected ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
     if (it.selected) {
-      // Inset so the highlight stays inside the card border.
-      renderer.fillRoundedRect(rowLeft + 2, rowY + 2, (rowRight - rowLeft) - 4, rowH - 4, 10, Color::LightGray);
+      // Inset so the highlight stays inside the card border (1-bit outline).
+      renderer.drawRoundedRect(rowLeft + 2, rowY + 2, (rowRight - rowLeft) - 4, rowH - 4, 2, 10, true);
     }
 
     // Right-aligned ▸ chevron (signals "Select opens/changes this row").
@@ -645,11 +648,11 @@ void AuroraTheme::drawList(const GfxRenderer& renderer, Rect rect, int itemCount
   const int contentWidth = rect.width - 5;
   const int pageStartIndex = (selectedIndex >= 0 ? selectedIndex : 0) / pageItems * pageItems;
 
-  // Aurora selection: a rounded light-gray pill (vs the base theme's inverted bar),
+  // Aurora selection: a 2px rounded outline pill (1-bit — no dithered grays),
   // so row text stays black instead of inverting.
   if (selectedIndex >= 0) {
     const int selY = rect.y + (selectedIndex % pageItems) * rowHeight - 2;
-    renderer.fillRoundedRect(rect.x + P - 6, selY, rect.width - 2 * (P - 6), rowHeight, 10, Color::LightGray);
+    renderer.drawRoundedRect(rect.x + P - 6, selY, rect.width - 2 * (P - 6), rowHeight, 2, 10, true);
   }
 
   constexpr int minValueGap = 10;
@@ -923,7 +926,7 @@ void AuroraTheme::drawReaderPanel(GfxRenderer& renderer, Rect screen, const char
     if (i >= itemCount) break;
     const int rowY = contentTop + slot * kPanelRowH;
     if (i == selectedIndex) {
-      renderer.fillRoundedRect(X + P - 6, rowY + 2, W - 2 * (P - 6), kPanelRowH - 4, 12, Color::LightGray);
+      renderer.drawRoundedRect(X + P - 6, rowY + 2, W - 2 * (P - 6), kPanelRowH - 4, 2, 12, true);
     }
     std::string value = rowValue ? rowValue(i) : std::string();
     const int valueW =
