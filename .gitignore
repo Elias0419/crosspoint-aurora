@@ -1,4 +1,7 @@
 .pio
+# Staging dir for release binaries renamed for OTA (firmware-<board>.bin);
+# they belong on a GitHub release, never in the tree.
+/release
 .idea
 .DS_Store
 .vscode

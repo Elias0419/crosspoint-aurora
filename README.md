@@ -2,6 +2,71 @@
 
 [![Fund contributors](https://img.shields.io/badge/%F0%9F%91%91_Fund_contributors-royalty.dev-BB953A?style=for-the-badge&labelColor=1a1a1a)](https://app.royalty.dev/crosspoint-reader/crosspoint-reader)
 
+## 🌅 Aurora — a personal fork
+
+> You are looking at the **`aurora`** branch of [jetaudio/crosspoint-aurora](https://github.com/jetaudio/crosspoint-aurora), a personal fork of
+> [crosspoint-reader](https://github.com/crosspoint-reader/crosspoint-reader). It adds a **LilyGo T5 S3 Pro / Pro Lite** target, a
+> touch-first UI, fully configurable buttons, and complete **Vietnamese** support. `master` here mirrors upstream untouched — every
+> change below lives on `aurora`, and firmware updates come from this repository's releases, not upstream's.
+>
+> *Bản fork cá nhân: hỗ trợ máy LilyGo T5 S3 Pro / Pro Lite, giao diện cảm ứng, phím bấm cấu hình được, và tiếng Việt trọn vẹn.*
+
+### Everything this fork adds over upstream
+
+**New hardware target**
+
+- **LilyGo T5 S3 Pro / Pro Lite** (`pio run -e lilygo`) — ESP32-S3 driving the 4.7" 960×540 16-gray panel over the S3's i80 LCD
+  peripheral (no on-glass controller), with GT911 touch, PCF8563 RTC, BQ27220 fuel gauge + BQ25896 charger, the frontlight on
+  GPIO11, and the PCA9535 expander key on the case (IO48). Brought up and verified on real hardware.
+- **Serial debug harness** — `scripts/serial_screen_capture.py` pulls the framebuffer as a PNG and injects key presses, taps,
+  long-presses and swipes over USB serial, so the UI can be exercised and diffed without touching the device.
+
+**Touch-first UI**
+
+- **Control Center** — an iOS-style sheet pulled from the top edge (or a status-bar tap): brightness slider with real **−/+**
+  buttons, a lamp on/off button, **1% steps** with 1% as the floor, plus quick tiles for night mode, ghost-cleanup refresh,
+  reading orientation, the touch kill-switch, a screenshot, and sleep. **Which tiles it shows is a setting** (Settings → Display →
+  Customise Control Center); the frontlight row always stays.
+- **Touch kill-switch** — turn the digitiser off for reading with a palm on the glass, from a tile or a key.
+- **Full touch routing for the Aurora chrome** — taps, drags and swipes across home, settings, the reader and every popup.
+- **Pure 1-bit chrome** — the tab bar, option popups and control center drop their dithered-gray washes for solid/outlined shapes,
+  which is what an e-ink panel actually renders cleanly.
+
+**Configurable buttons**
+
+- **Every key gets its own tap and hold action**, chosen from one shared list: nothing, next/previous page, back, home, reader
+  menu, control center, night mode, refresh, frontlight, touch on/off, sleep. Covers the capacitive **Home** key, the **IO48**
+  expander key (which previously did nothing useful) and **BOOT**.
+- Two-zone navigation for button-only devices, plus a three-way **button hints** setting (off / front only / front + edge).
+
+**Vietnamese**
+
+- Complete **Vietnamese UI translation**, and **UI fonts regenerated from Noto Sans** so every diacritic is covered.
+- Selectable **system font**: Noto Sans or Ubuntu (Vietnamese).
+- **NFC normalisation** of EPUB text, so books stored as NFD still render their tone marks correctly.
+
+**Reader and typography**
+
+- **Drop caps** — an enlarged decorative initial on chapter openings, with **selectable drop-cap faces** loaded from the SD card.
+- **Small caps** — the opening line of a chapter set in all-caps.
+- **Redesigned reader** — clean page plus an overlay toolbar (Contents / Text / More), font changes applied in place with no book
+  reopen, hold-to-jump in the panel lists, and overlays that open on a HALF refresh so no gray ghost is left behind.
+- **Aurora home screen** — slim status bar, a "Continue Reading" hero card with cover and progress, card-style recent books, and a
+  persistent bottom icon tab bar. Night mode inverts the whole UI, not just the page.
+
+**Library and system**
+
+- **File browser context menu** (long-press): rename and delete.
+- **~300 KB of flash reclaimed** by compiling hyphenation only for the languages actually shipped (en/fr/es/it).
+- **Fast wake** — boot no longer blocks waiting for the power button to be released, so the UI draws immediately.
+- **OTA from this fork** — update checks read this repository's releases (asset `firmware-lilygo.bin` for the T5 S3, `firmware.bin`
+  for the C3 X4/X3), so an update never overwrites Aurora with stock CrossPoint.
+
+> 📌 The Vietnamese translation and fonts have been contributed back upstream. The rest (Aurora theme, touch UI, configurable
+> buttons, LilyGo target, drop caps) continues to live on this branch.
+
+---
+
 CrossPoint is open-source e-reader firmware - community-built, fully hackable, free forever. It's maintained by a growing community of developers and readers who believe your device should do what you want - not what a manufacturer decided for you.
 
 **Now running on:** ESP32C3-based Xteink [X4](https://www.xteink.com/products/xteink-x4) and [X3](https://www.xteink.com/products/xteink-x3).
@@ -9,24 +74,6 @@ CrossPoint is open-source e-reader firmware - community-built, fully hackable, f
 ![CrossPoint Reader running on Xteink device](./docs/images/cover.jpg)
 
 > If you're planning to buy an Xteink device, consider purchasing an **X3/X4 Developer Edition** through https://crosspointreader.com. CrossPoint receives a small share of each sale, helping fund development costs.
-
----
-
-## 🌅 Aurora — bản fork tiếng Việt
-
-> Đây là nhánh **`aurora`**, một bản fork cá nhân của CrossPoint Reader hướng tới trải nghiệm đọc **tiếng Việt** trọn vẹn cùng một giao diện được làm lại. Nhánh `master` được giữ nguyên bản, đồng bộ với upstream; mọi tùy biến nằm ở nhánh `aurora` này.
-
-**Có gì khác so với bản gốc:**
-
-- **Giao diện Aurora** — một theme mới (chọn trong Cài đặt) làm lại màn hình chính: thanh trạng thái mỏng, thẻ **"Now Reading"** nổi bật, danh sách **"Library"** sách gần đây kiểu thẻ kèm tiến độ đọc, và **thanh tab biểu tượng ở đáy** (Duyệt tập tin / Sách gần đây / Cài đặt / Truyền tập tin).
-- **Điều hướng hai vùng** — nút **Lên/Xuống** bên hông duyệt danh sách; nút **Trái/Phải** mặt trước di chuyển thanh tab đáy. Có tùy chọn **hiện gợi ý phím** (tắt / chỉ mặt trước / mặt trước + cạnh).
-- **Tiếng Việt đầy đủ** — bản dịch giao diện tiếng Việt hoàn chỉnh và **phông UI phủ kín dấu tiếng Việt** (tái tạo từ Noto Sans). Chọn được **phông hệ thống**: Noto Sans hoặc Ubuntu (Vietnamese).
-- **Hiển thị tiếng Việt chuẩn** — tự **chuẩn hóa NFC** văn bản EPUB nên tiêu đề/nội dung dạng NFD vẫn hiện đúng dấu.
-- **Trình đọc EPUB làm lại** — trang sạch + thanh công cụ dạng overlay (Mục lục / Văn bản / Thêm), đổi phông áp dụng tức thì không cần mở lại sách.
-- **Tối ưu bộ nhớ flash** — chỉ biên dịch ngắt từ (hyphenation) cho các ngôn ngữ thực dùng (en/fr/es/it), tiết kiệm ~300 KB flash.
-- **Đánh thức nhanh** — không chặn khởi động chờ nhả nút nguồn, giao diện vẽ ngay.
-
-> 📌 Các PR tiếng Việt (bản dịch & phông) đã được đóng góp ngược lên upstream. Phần còn lại (theme Aurora, điều hướng hai vùng, trình đọc làm lại…) tiếp tục sống ở nhánh này.
 
 ---
 
