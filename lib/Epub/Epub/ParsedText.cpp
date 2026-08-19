@@ -772,7 +772,7 @@ void ParsedText::stripLeadingCodepoints(size_t count) {
       wordStyles.erase(wordStyles.begin());
       wordContinues.erase(wordContinues.begin());
       wordNoSpaceBefore.erase(wordNoSpaceBefore.begin());
-      wordIsFocusSuffix.erase(wordIsFocusSuffix.begin());
+      wordFocusBoundary.erase(wordFocusBoundary.begin());
       eraseVisibleOffsetPrefix(1);
       continue;  // keep consuming from the next (continuation) word if any remain
     }

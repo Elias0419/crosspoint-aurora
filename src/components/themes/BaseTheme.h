@@ -251,6 +251,10 @@ class BaseTheme {
   void drawProgressBar(const GfxRenderer& renderer, Rect rect, size_t current, size_t total) const;
   void drawBatteryLeft(const GfxRenderer& renderer, Rect rect,
                        bool showPercentage = true) const;  // Left aligned (reader mode)
+  // Right aligned (UI headers). develop's own headers draw the battery through
+  // fui::batteryIndicator; Aurora paints its slim status row directly, so it still
+  // needs this pair.
+  void drawBatteryRight(const GfxRenderer& renderer, Rect rect, bool showPercentage = true) const;
   virtual void fillBatteryIcon(const GfxRenderer& renderer, Rect rect, uint16_t percentage) const;
   virtual void drawButtonHints(GfxRenderer& renderer, const char* btn1, const char* btn2, const char* btn3,
                                const char* btn4) const;

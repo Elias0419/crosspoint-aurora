@@ -224,6 +224,8 @@ bool buildDictionaryHtmlPages(GfxRenderer& renderer, const std::string& definiti
         nullptr, tmpPath, renderer, SETTINGS.getReaderFontId(), SETTINGS.getReaderLineCompression(),
         SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment, viewportWidth, viewportHeight,
         SETTINGS.hyphenationEnabled, SETTINGS.focusReadingEnabled,
+        // A dictionary definition is not a chapter opening: no drop cap, no small-caps line.
+        /*dropCapsEnabled=*/false, /*smallCapsFirstLine=*/false,
         [&pagesOut, &resourceLimitHit, &retainedElements](std::unique_ptr<Page> page, uint16_t, uint16_t, uint32_t) {
           if (resourceLimitHit) return;
           const size_t pageElements = page->elements.size();

@@ -107,9 +107,6 @@ class HalGPIO {
 
   bool isPowerButtonPhysicallyPressed() const;
 
-  // Setup wake up GPIO and enter deep sleep
-  void startDeepSleep();
-
   // Verify power button was held long enough after wakeup.
   // Returns true if verification succeeded, false if device should return to sleep.
   // Should only be called when wakeup reason is PowerButton.

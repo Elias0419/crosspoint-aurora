@@ -5,6 +5,9 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <XteinkDetect.h>
+#if FREEINK_DEVICE_LILYGO
+#include <BoardT5S3.h>
+#endif
 #include <esp_sleep.h>
 
 // Global HalGPIO instance
@@ -135,6 +138,13 @@ void HalGPIO::begin() {
 #else
   _deviceType = DeviceType::X4;
 #endif
+#if FREEINK_DEVICE_LILYGO
+  // LilyGo T5 S3: bring up the board's I2C bus, the SD SPI pins and the PCA9535
+  // expander before anything else touches them — the expander owns the EPD power
+  // sequence (used by the display driver) and the user button, which BoardT5S3
+  // registers with InputManager as a button hook here.
+  BoardT5S3::begin();
+#endif
   inputMgr.begin();
 }
 
@@ -180,18 +190,6 @@ bool HalGPIO::isTouchTapCandidate(float& nx, float& ny, unsigned long& heldMs) c
 }
 
 bool HalGPIO::isPowerButtonPhysicallyPressed() const { return digitalRead(InputManager::POWER_BUTTON_PIN) == LOW; }
-
-void HalGPIO::startDeepSleep() {
-  // Ensure that the power button has been released to avoid immediately turning back on if you're holding it
-  while (inputMgr.isPressed(BTN_POWER)) {
-    delay(50);
-    inputMgr.update();
-  }
-  // Arm the wakeup trigger *after* the button is released
-  esp_deep_sleep_enable_gpio_wakeup(1ULL << InputManager::POWER_BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
-  // Enter Deep Sleep
-  esp_deep_sleep_start();
-}
 
 bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return inputMgr.isTouchHeldAt(nx, ny); }
 

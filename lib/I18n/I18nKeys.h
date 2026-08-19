@@ -68,6 +68,8 @@ extern const char STRINGS_BS_DATA[];
 extern const uint16_t OFFSETS_BS[];
 extern const char STRINGS_ID_DATA[];
 extern const uint16_t OFFSETS_ID[];
+extern const char STRINGS_OOK_DATA[];
+extern const uint16_t OFFSETS_OOK[];
 }  // namespace i18n_strings
 
 // Language enum
@@ -103,6 +105,7 @@ enum class Language : uint8_t {
   AR = 28,
   BS = 29,
   ID = 30,
+  OOK = 31,
   _COUNT
 };
 
@@ -131,13 +134,11 @@ enum class StrId : uint16_t {
   STR_TOOL_TEXT,
   STR_TOOL_MORE,
   STR_PAGE_LABEL,
-  STR_ADVANCED_SETTINGS,
   STR_CONTINUE_READING,
   STR_RESUME,
   STR_NO_OPEN_BOOK,
   STR_START_READING,
   STR_NO_FILES_FOUND,
-  STR_FOLDER,
   STR_SELECT_CHAPTER,
   STR_NO_CHAPTERS,
   STR_END_OF_BOOK,
@@ -202,8 +203,6 @@ enum class StrId : uint16_t {
   STR_CAT_READER,
   STR_CAT_CONTROLS,
   STR_CAT_SYSTEM,
-  STR_CAT_DEVICE,
-  STR_SEC_READING,
   STR_SLEEP_SCREEN,
   STR_NIGHT_MODE,
   STR_QUICK_RESUME_TIMEOUT,
@@ -221,6 +220,7 @@ enum class StrId : uint16_t {
   STR_ORIENTATION,
   STR_SIDE_BTN_LAYOUT,
   STR_TOUCH_READER_CONTROLS,
+  STR_TAP_FOR_READER_MENU,
   STR_FRONT_BTN_FOLLOW_ORIENTATION,
   STR_LONG_PRESS_BEHAVIOR,
   STR_LONG_PRESS_BEHAVIOR_OFF,
@@ -310,6 +310,7 @@ enum class StrId : uint16_t {
   STR_KOSYNC,
   STR_BOOKMARK_OPTION,
   STR_DICTIONARY,
+  STR_READER_MENU,
   STR_DISABLED,
   STR_NOTO_SERIF,
   STR_NOTO_SANS,
@@ -320,6 +321,7 @@ enum class StrId : uint16_t {
   STR_TIGHT,
   STR_NORMAL,
   STR_WIDE,
+  STR_EXTRA_WIDE,
   STR_JUSTIFY,
   STR_ALIGN_LEFT,
   STR_CENTER,
@@ -376,6 +378,13 @@ enum class StrId : uint16_t {
   STR_HIDE,
   STR_STATE_ON,
   STR_STATE_OFF,
+  STR_STATE_TAP,
+  STR_STATE_SWIPE,
+  STR_STATE_INVERTED_TAP,
+  STR_FRONTLIGHT,
+  STR_BRIGHTNESS,
+  STR_WARMTH,
+  STR_RESTORE_LIGHT_ON_WAKE,
   STR_NOT_SET,
   STR_DIR_LEFT,
   STR_DIR_RIGHT,
@@ -436,12 +445,14 @@ enum class StrId : uint16_t {
   STR_SUNLIGHT_FADING_FIX,
   STR_REMAP_FRONT_BUTTONS,
   STR_BOOKMARKS,
+  STR_NO_BOOKMARKS,
   STR_BOOKMARK_ADDED,
   STR_BOOKMARK_REMOVED,
   STR_OPDS_BROWSER,
   STR_SEARCH,
   STR_COVER_CUSTOM,
   STR_QUICK_RESUME,
+  STR_TRANSPARENT,
   STR_MENU_RECENT_BOOKS,
   STR_REMOVE_FROM_RECENTS,
   STR_NO_RECENT_BOOKS,
@@ -648,6 +659,8 @@ inline LangStrings getLanguageStrings(Language lang) {
       return {i18n_strings::STRINGS_BS_DATA, i18n_strings::OFFSETS_BS};
     case Language::ID:
       return {i18n_strings::STRINGS_ID_DATA, i18n_strings::OFFSETS_ID};
+    case Language::OOK:
+      return {i18n_strings::STRINGS_OOK_DATA, i18n_strings::OFFSETS_OOK};
     default:
       return {i18n_strings::STRINGS_EN_DATA, i18n_strings::OFFSETS_EN};
   }
@@ -670,25 +683,26 @@ constexpr uint8_t getLanguageCount() { return static_cast<uint8_t>(Language::_CO
 //   10: HU   Magyar
 //   11: NL   Nederlands
 //   12: NB   Norsk bokmål
-//   13: PL   Polski
-//   14: PT   Português (Brasil)
-//   15: P2   Português (Portugal)
-//   16: RO   Română
-//   17: SK   Slovenčina
-//   18: SI   Slovenščina
-//   19: FI   Suomi
-//   20: SV   Svenska
-//   21: VI   Tiếng Việt
-//   22: TR   Türkçe
-//   23: CAV  Valencià
-//   24: CS   Čeština
-//   25: BE   Беларуская
-//   26: RU   Русский
-//   27: UK   Українська
-//   28: KK   Қазақша
-//   29: HE   עברית
-//   30: AR   العربية
-constexpr uint8_t SORTED_LANGUAGE_INDICES[] = {0, 30, 29, 9, 15, 3, 1, 2, 12, 20, 19, 16, 26, 13, 5, 27, 8, 24, 21, 14, 7, 25, 17, 22, 4, 11, 6, 10, 18, 23, 28};
+//   13: OOK  Orangutan
+//   14: PL   Polski
+//   15: PT   Português (Brasil)
+//   16: P2   Português (Portugal)
+//   17: RO   Română
+//   18: SK   Slovenčina
+//   19: SI   Slovenščina
+//   20: FI   Suomi
+//   21: SV   Svenska
+//   22: VI   Tiếng Việt
+//   23: TR   Türkçe
+//   24: CAV  Valencià
+//   25: CS   Čeština
+//   26: BE   Беларуская
+//   27: RU   Русский
+//   28: UK   Українська
+//   29: KK   Қазақша
+//   30: HE   עברית
+//   31: AR   العربية
+constexpr uint8_t SORTED_LANGUAGE_INDICES[] = {0, 30, 29, 9, 15, 3, 1, 2, 12, 20, 19, 16, 26, 31, 13, 5, 27, 8, 24, 21, 14, 7, 25, 17, 22, 4, 11, 6, 10, 18, 23, 28};
 
 static_assert(sizeof(SORTED_LANGUAGE_INDICES) / sizeof(SORTED_LANGUAGE_INDICES[0]) == getLanguageCount(),
               "SORTED_LANGUAGE_INDICES size mismatch");
