@@ -57,6 +57,8 @@ class AuroraTheme : public BaseTheme {
   // Tap-target geometry mirroring drawHomeScreen / drawReaderToolbar /
   // drawReaderPanel — keep in sync with those draw functions.
   HomeHitLayout homeHitLayout(const GfxRenderer& renderer) const override;
+  int settingsItemAt(const GfxRenderer& renderer, Rect content, const std::vector<SettingsListItem>& items, int x,
+                     int y) const override;
   ReaderToolbarHit readerToolbarHitAreas(const GfxRenderer& renderer) const override;
   ReaderPanelHit readerPanelHitAreas(const GfxRenderer& renderer) const override;
 

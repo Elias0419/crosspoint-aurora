@@ -2,6 +2,8 @@
 
 #include <I18n.h>
 
+#include <algorithm>
+
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
 #include "activities/Activity.h"  // pulls in ActivityManager + the complete Activity type
@@ -37,9 +39,15 @@ int HomeTabBar::hitTest(const GfxRenderer& renderer, int x, int y) {
   const int pageW = renderer.getScreenWidth();
   const int barTop = renderer.getScreenHeight() - hintH - barH;
   if (y < barTop || y >= barTop + barH || x < 0) return -1;
-  const int slotW = pageW / kCount;
+  // Slots live inside the Aurora dock, which is inset from the screen edges
+  // (kDockSideMargin in AuroraTheme.cpp — keep in sync). Taps in the margins
+  // snap to the nearest slot.
+  constexpr int dockSideMargin = 20;
+  const int dockW = pageW - 2 * dockSideMargin;
+  const int slotW = dockW / kCount;
   if (slotW <= 0) return -1;
-  const int idx = x / slotW;
+  const int dx = std::min(std::max(x - dockSideMargin, 0), dockW - 1);
+  const int idx = dx / slotW;
   return idx < kCount ? idx : kCount - 1;
 }
 

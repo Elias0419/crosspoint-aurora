@@ -143,6 +143,7 @@ void moveFinishedBookToReadFolder(const std::string& srcPath, const std::string&
 
 EpubReaderActivity::~EpubReaderActivity() {
   ImageBlock::setExtractor(nullptr, nullptr);
+  discardOverlayPage();  // free the overlay's page snapshot if one is held
 
   if (footnoteDepth > 0 && epub) {
     const SavedPosition& origin = savedPositions[0];
@@ -1341,6 +1342,10 @@ void EpubReaderActivity::renderBook() {
   // grayscale AA pass, and a FAST differential leaves the covered text ghosting
   // gray through the chrome background.
   if (overlay != Overlay::None && GUI.ownsReaderChrome()) {
+    // The page just re-rendered under the overlay: refresh the snapshot that
+    // backs panel->toolbar restores (any previous copy is stale).
+    discardOverlayPage();
+    overlayPageStored = renderer.storeBwBuffer();
     renderOverlay();
     renderer.displayBuffer(HalDisplay::HALF_REFRESH);
   }
@@ -1674,7 +1679,14 @@ namespace {
 constexpr int kTextRowCount = 5;
 }  // namespace
 
+void EpubReaderActivity::discardOverlayPage() {
+  if (!overlayPageStored) return;
+  renderer.discardStoredBwBuffer();
+  overlayPageStored = false;
+}
+
 void EpubReaderActivity::openOverlay(Overlay target) {
+  const Overlay previous = overlay;
   overlay = target;
   switch (target) {
     case Overlay::Toolbar:
@@ -1700,15 +1712,20 @@ void EpubReaderActivity::openOverlay(Overlay target) {
   // (every line re-drawn, drop-cap glyph re-fetched from the SD face) and visibly wrong, since
   // that repaint lands before the overlay does.
   //
-  // HALF, not FAST: the page under the chrome was just driven by the grayscale AA waveform,
-  // and a FAST differential can't fully erase that charge -- the covered text ghosts gray
-  // through the toolbar/panel background (same mechanism as #2190's image ghosting). HALF is
-  // the X4's ghost-cleanup waveform: it drives every pixel to its target regardless of
-  // residue. In-overlay navigation redraws (fastRedraw) stay FAST -- they repaint over
-  // chrome that FAST itself drew, where a differential is clean.
+  // Refresh mode: HALF only for the FIRST overlay over a fresh page — the page
+  // was just driven by the grayscale AA waveform, and a FAST differential
+  // can't fully erase that charge (the covered text ghosts gray through the
+  // chrome, same mechanism as #2190's image ghosting). Overlay→overlay
+  // transitions repaint over chrome that HALF/FAST already drew, where a
+  // differential is clean — FAST keeps them snappy and flash-free.
   if (section) {
+    if (previous == Overlay::None) {
+      // Snapshot the clean page so stepping back from a panel to the toolbar
+      // can restore it without a full re-render (see dismissPanel paths).
+      overlayPageStored = renderer.storeBwBuffer();
+    }
     renderOverlay();
-    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+    renderer.displayBuffer(previous == Overlay::None ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
   } else {
     requestUpdate();
   }
@@ -1811,6 +1828,7 @@ void EpubReaderActivity::handleOverlayInput() {
       }
       if (ty < hit.bottomTop) {
         overlay = Overlay::None;
+        discardOverlayPage();
         requestUpdate();  // redraw the clean page
         return;
       }
@@ -1819,6 +1837,7 @@ void EpubReaderActivity::handleOverlayInput() {
 
     if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
       overlay = Overlay::None;
+      discardOverlayPage();
       requestUpdate();  // redraw the clean page
       return;
     }
@@ -1880,6 +1899,7 @@ void EpubReaderActivity::handleOverlayInput() {
         section.reset();
       }
       overlay = Overlay::None;
+      discardOverlayPage();
       requestUpdate();
     } else if (overlay == Overlay::More) {
       activateMoreRow(panelIndex);
@@ -1888,11 +1908,25 @@ void EpubReaderActivity::handleOverlayInput() {
 
   // Steps up to the toolbar (Text persists + re-paginates first) — the Back
   // button and a tap on the page above the sheet.
-  const auto dismissPanel = [this] {
+  const auto dismissPanel = [this, &fastRedraw] {
     if (overlay == Overlay::Text) {
+      // Text changes re-paginate, so the stored page snapshot is stale.
       applyReaderTextSettings();
+      overlay = Overlay::Toolbar;
+      discardOverlayPage();
+      requestUpdate();
+      return;
     }
     overlay = Overlay::Toolbar;
+    // Restore the snapshotted page under the toolbar instead of re-rendering
+    // it (2+ refreshes -> one FAST). Re-store right away so another panel
+    // round-trip can restore again.
+    if (overlayPageStored) {
+      renderer.restoreBwBuffer();
+      overlayPageStored = renderer.storeBwBuffer();
+      fastRedraw();
+      return;
+    }
     requestUpdate();
   };
 
@@ -1905,6 +1939,14 @@ void EpubReaderActivity::handleOverlayInput() {
     if (mappedInput.wasScreenTapped(tx, ty)) {
       if (ty < hit.panelTop) {
         dismissPanel();
+        return;
+      }
+      // Right-edge strip pages the sheet by taps (tap-first: swipes are
+      // unreliable on the T5S3's etched glass).
+      if (count > 0 && hit.pageItems > 0 && tx >= renderer.getScreenWidth() - 44) {
+        const int step = ty >= (hit.panelTop + renderer.getScreenHeight()) / 2 ? hit.pageItems : -hit.pageItems;
+        panelIndex = std::clamp(panelIndex + step, 0, count - 1);
+        fastRedraw();
         return;
       }
       if (count > 0 && ty >= hit.listTop && hit.rowHeight > 0 && hit.pageItems > 0) {
@@ -2155,6 +2197,7 @@ void EpubReaderActivity::activateMoreRow(int row) {
   }
   // Leaf actions open their own screen / perform the action; close the overlay first.
   overlay = Overlay::None;
+  discardOverlayPage();
   onReaderMenuConfirm(action);
 }
 

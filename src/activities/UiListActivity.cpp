@@ -43,6 +43,9 @@ void UiListActivity::onRowAction(const fui::ActionEvent& event) {
   activateIndex(event.value);
 }
 
+// Width of the right-edge tap strip that pages any list (see loop()).
+constexpr int kPageTapStripW = 44;
+
 bool UiListActivity::handleButtons() {
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     onBackButton();
@@ -82,6 +85,27 @@ void UiListActivity::moveSelectionTo(const int index) {
 void UiListActivity::loop() {
   if (handleCustomInput()) return;
   if (handleButtons()) return;
+
+  // Tap-first paging: the right-edge strip pages the viewport (top half = up,
+  // bottom half = down). The T5S3's etched glass makes swipes unreliable, so
+  // every swipe action needs a tap equivalent; rows lose only their rightmost
+  // sliver of tap area.
+  if (mappedInput.hasTouch()) {
+    int tx = 0;
+    int ty = 0;
+    if (mappedInput.wasScreenTapped(tx, ty) && tx >= renderer.getScreenWidth() - kPageTapStripW) {
+      bool moved = false;
+      {
+        RenderLock lock(*this);
+        auto& n = activeNav();
+        const int delta = ty >= renderer.getScreenHeight() / 2 ? n.pageRows() : -n.pageRows();
+        moved = n.scrollBy(delta, listCount());
+      }
+      if (moved) requestUpdate();
+      return;
+    }
+  }
+
   if (routeListTouch()) return;
 
   // Swipes scroll the viewport; the selection stays put (it may scroll

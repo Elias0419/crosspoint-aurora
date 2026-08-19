@@ -22,6 +22,11 @@ constexpr fui::ActionId ACTION_WARMTH = 2;
 constexpr fui::ActionId ACTION_TOGGLE = 3;
 constexpr fui::ActionId ACTION_BRIGHTNESS_STEP = 4;
 constexpr fui::ActionId ACTION_WARMTH_STEP = 5;
+constexpr fui::ActionId ACTION_TILE = 6;  // value = tile index
+
+// Quick-setting tiles (2 columns). Keep computePanelBottom in sync.
+constexpr int kTileRows = 2;
+constexpr int16_t kTileHeight = 64;
 constexpr int BUTTON_BRIGHTNESS_STEP = 5;
 constexpr int FINE_STEP = 1;
 
@@ -32,6 +37,9 @@ uint8_t percentFromPermille(const int16_t permille) {
   return static_cast<uint8_t>(value);
 }
 }  // namespace
+
+// main.cpp's deep-sleep entry (persists state, draws the sleep screen, sleeps).
+void enterDeepSleep(bool fromTimeout);
 
 FrontlightPanelActivity::FrontlightPanelActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
     : Activity("FrontlightPanel", renderer, mappedInput), UiAppHost(renderer) {}
@@ -50,6 +58,7 @@ void FrontlightPanelActivity::onEnter() {
   app.on(ACTION_TOGGLE, &FrontlightPanelActivity::onToggleEvent, this);
   app.on(ACTION_BRIGHTNESS_STEP, &FrontlightPanelActivity::onBrightnessStepEvent, this);
   app.on(ACTION_WARMTH_STEP, &FrontlightPanelActivity::onWarmthStepEvent, this);
+  app.on(ACTION_TILE, &FrontlightPanelActivity::onTileEvent, this);
   app.setScreen(&FrontlightPanelActivity::panelScreen, this);
   requestUpdate();
 }
@@ -100,6 +109,35 @@ void FrontlightPanelActivity::onBrightnessStepEvent(const fui::ActionEvent& even
 
 void FrontlightPanelActivity::onWarmthStepEvent(const fui::ActionEvent& event, void* user) {
   static_cast<FrontlightPanelActivity*>(user)->adjustWarmth(event.value * FINE_STEP);
+}
+
+void FrontlightPanelActivity::onTileEvent(const fui::ActionEvent& event, void* user) {
+  static_cast<FrontlightPanelActivity*>(user)->runTile(event.value);
+}
+
+void FrontlightPanelActivity::runTile(const int idx) {
+  switch (idx) {
+    case 0:  // Night mode (reader colors inverted)
+      SETTINGS.screenInverted = SETTINGS.screenInverted ? 0 : 1;
+      SETTINGS.saveToFile();
+      requestUpdate();
+      break;
+    case 1:  // Ghost-cleanup refresh of the whole frame
+      cleanRefreshPending = true;
+      requestUpdate();
+      break;
+    case 2:  // Cycle the reading orientation
+      SETTINGS.orientation = static_cast<uint8_t>((SETTINGS.orientation + 1) % 4);
+      SETTINGS.saveToFile();
+      requestUpdate();
+      break;
+    case 3:  // Sleep now
+      SETTINGS.saveToFile();
+      enterDeepSleep(false);
+      break;
+    default:
+      break;
+  }
 }
 
 void FrontlightPanelActivity::adjustBrightness(const int delta) {
@@ -180,11 +218,14 @@ int FrontlightPanelActivity::computePanelBottom() const {
   const int16_t lineHeight = uiTarget.lineHeight(tokens.bodyText.font);
   int y = metrics.topPadding + metrics.headerHeight;
   y += tokens.spaceLg;
-  y += tokens.rowHeight + tokens.spaceSm;
-  y += tokens.rowHeight + tokens.spaceLg;
-  if (Frontlight.hasColorTemperature()) {
-    y += lineHeight + tokens.spaceSm + tokens.rowHeight + tokens.spaceLg;
+  if (Frontlight.present()) {
+    y += tokens.rowHeight + tokens.spaceSm;
+    y += tokens.rowHeight + tokens.spaceLg;
+    if (Frontlight.hasColorTemperature()) {
+      y += lineHeight + tokens.spaceSm + tokens.rowHeight + tokens.spaceLg;
+    }
   }
+  y += kTileRows * (kTileHeight + tokens.spaceMd);
   y += tokens.spaceLg;
   return y;
 }
@@ -207,6 +248,7 @@ void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
 
   screen.spacer(theme.spaceLg);
 
+  if (Frontlight.present()) {
   const fui::Rect headerRow = screen.takeTop(rowHeight, theme.spaceSm).inset(sideInset);
   snprintf(line, sizeof(line), "%s  %u%%", tr(STR_BRIGHTNESS), static_cast<unsigned>(brightness));
   const fui::BitmapRef sunIcon = fui::bitmapFromIcon(lightOn ? icon_sun_filled_32 : icon_sun_32);
@@ -230,6 +272,37 @@ void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
     screen.target().text(screen.takeTop(lineHeight, theme.spaceSm).inset(sideInset), line, theme.bodyText);
     addStepSlider(screen, screen.takeTop(theme.rowHeight, theme.spaceLg).inset(sideInset), warmth, ACTION_WARMTH,
                   ACTION_WARMTH_STEP);
+  }
+  }  // Frontlight.present()
+
+  // Quick-setting tiles (iOS Control Center style): two columns of themed
+  // buttons. Values show inline so a glance answers "what state is it in".
+  {
+    // Night mode shows its state through the checked tile style, not a value
+    // suffix (the combined label doesn't fit half a row).
+    const char* nightLabel = tr(STR_NIGHT_MODE);
+    static constexpr StrId kOrientNames[4] = {StrId::STR_PORTRAIT, StrId::STR_LANDSCAPE_CW,
+                                              StrId::STR_ORIENTATION_INVERTED, StrId::STR_LANDSCAPE_CCW};
+    char orientLabel[64];
+    snprintf(orientLabel, sizeof(orientLabel), "%s: %s", tr(STR_ORIENTATION),
+             I18N.get(kOrientNames[SETTINGS.orientation % 4]));
+    const char* labels[4] = {nightLabel, tr(STR_FORCE_REFRESH), orientLabel, tr(STR_SLEEP)};
+    const fui::State states[4] = {SETTINGS.screenInverted ? fui::StateChecked : fui::StateNormal, fui::StateNormal,
+                                  fui::StateNormal, fui::StateNormal};
+    for (int r = 0; r < kTileRows; ++r) {
+      const fui::Rect row = screen.takeTop(kTileHeight, theme.spaceMd).inset(sideInset);
+      const int16_t tileW = static_cast<int16_t>((row.width - theme.spaceMd) / 2);
+      for (int c = 0; c < 2; ++c) {
+        const int idx = r * 2 + c;
+        const fui::Rect tile{static_cast<int16_t>(row.x + c * (tileW + theme.spaceMd)), row.y, tileW, kTileHeight};
+        fui::ButtonProps props;
+        props.label = labels[idx];
+        props.action = ACTION_TILE;
+        props.value = static_cast<int16_t>(idx);
+        props.state = states[idx];
+        screen.button(props, tile);
+      }
+    }
   }
 
   screen.spacer(theme.spaceLg);
@@ -266,10 +339,13 @@ void FrontlightPanelActivity::render(RenderLock&&) {
   renderer.fillRect(0, 0, pageWidth, panelBottom, false);
 
   const auto& metrics = UITheme::getInstance().getMetrics();
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_FRONTLIGHT));
+  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_CONTROL_CENTER));
 
   renderUi();
 
   renderer.fillRect(0, panelBottom - 2, pageWidth, 2, true);
-  renderer.displayBuffer();
+  // The refresh tile re-drives every pixel once with the ghost-cleanup
+  // waveform; ordinary repaints stay on the default fast path.
+  renderer.displayBuffer(cleanRefreshPending ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
+  cleanRefreshPending = false;
 }

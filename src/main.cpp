@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <BatteryMonitor.h>
 #include <BoardConfig.h>
 #if FREEINK_DEVICE_LILYGO
 #include <BoardT5S3.h>
@@ -749,6 +750,15 @@ void loop() {
         } else {
           logSerial.printf("TOUCH_ERR:%s\n", cmd.c_str());
         }
+      } else if (cmd == "BATT") {
+        // Fuel-gauge diagnostics: raw SOC/voltage/charging as the gauge
+        // reports them (e.g. to tell a "98% ceiling" gauge-sync issue from a
+        // firmware display bug).
+        static const BatteryMonitor debugBattery;
+        const auto st = debugBattery.readStatus();
+        logSerial.printf("BATT: pct=%u(known=%d) mv=%u(known=%d) charging=%d(known=%d) ext=%d(known=%d)\n",
+                         st.percentage, st.percentageKnown, st.millivolts, st.millivoltsKnown, st.charging,
+                         st.chargingKnown, st.externalPower, st.externalPowerKnown);
       }
     }
   }
@@ -796,6 +806,21 @@ void loop() {
   // Consume the second X4 Pro power-button release so it does not also run a
   // configured short-power action after toggling the frontlight.
   if (handleX4ProFrontlightDoubleClick()) {
+    return;
+  }
+
+  // Capacitive home-key tap bound to a global action. Back and Home run
+  // through MappedInputManager (button mapping / wasHomeGesture) instead.
+  if (mappedInputManager.wasHomeKeyAction(CrossPointSettings::HOME_KEY_LIGHT)) {
+    const bool lightOn = !Frontlight.isOn();
+    Frontlight.setOn(lightOn);
+    SETTINGS.frontlightOn = lightOn ? 1 : 0;
+    SETTINGS.saveToFile();
+    LOG_INF("LIGHT", "Frontlight toggled %s by home key", lightOn ? "on" : "off");
+    return;
+  }
+  if (millis() >= allowSleepAt && mappedInputManager.wasHomeKeyAction(CrossPointSettings::HOME_KEY_SLEEP)) {
+    enterDeepSleep();
     return;
   }
 

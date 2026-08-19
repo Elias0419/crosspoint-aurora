@@ -264,6 +264,10 @@ bool MappedInputManager::wasEdgeSwipe(const freeink::ui::ScreenEdge edge) const 
 }
 
 bool MappedInputManager::wasBackGesture() const {
+  // The left-edge swipe misfires from reading-page taps near the edge; boards
+  // whose capacitive home key is bound to Back use the key instead. The
+  // gesture stays as the fallback whenever the key is absent or rebound.
+  if (gpio.hasHomeKey() && SETTINGS.homeKeyFunction == CrossPointSettings::HOME_KEY_BACK) return false;
   // Back = left-to-right swipe starting near the left edge. Edge-anchored so that
   // mid-screen horizontal swipes stay available to activities that consume
   // SwipeDir::Left/Right (e.g. percent selection, image viewer).
@@ -276,15 +280,25 @@ bool MappedInputManager::wasBottomEdgeUpSwipe() const { return wasEdgeSwipe(fui:
 
 bool MappedInputManager::wasMenuGesture() const { return wasTopEdgeDownSwipe(); }
 
+// The capacitive home key's tap action is user-selectable (homeKeyFunction);
+// this reports whether the key fired while bound to the given action.
+bool MappedInputManager::wasHomeKeyAction(const uint8_t function) const {
+  return gpio.hasHomeKey() && SETTINGS.homeKeyFunction == function && gpio.wasHomeKeyTapped();
+}
+
 bool MappedInputManager::wasHomeGesture() const {
-  return gpio.hasHomeKey() ? gpio.wasHomeKeyTapped() : wasBottomEdgeUpSwipe();
+  // The bottom-edge-up swipe stays a universal Home path on touch boards: the
+  // key defaults to Back, and Home must remain reachable without it.
+  if (wasHomeKeyAction(CrossPointSettings::HOME_KEY_HOME)) return true;
+  return wasBottomEdgeUpSwipe();
 }
 
 bool MappedInputManager::wasHomeKeyHold() const { return gpio.hasHomeKey() && gpio.wasHomeKeyLongPressed(); }
 
 bool MappedInputManager::wasLightPanelGesture() const {
-  // On lightless boards the same edge remains available to the reader menu.
-  return Frontlight.present() && wasTopEdgeDownSwipe();
+  // The top-edge swipe opens the control center on every touch board — it
+  // holds the quick-setting tiles even when there is no frontlight to dim.
+  return wasTopEdgeDownSwipe();
 }
 
 #if FREEINK_CAP_TOUCH
@@ -298,7 +312,9 @@ bool MappedInputManager::wasPowerConfirmClick() const {
 #endif
 
 bool MappedInputManager::wasPressed(const Button button) const {
-  if (button == Button::Back && wasBackGesture()) return true;
+  if (button == Button::Back &&
+      (wasBackGesture() || wasHomeKeyAction(CrossPointSettings::HOME_KEY_BACK)))
+    return true;
 #if FREEINK_CAP_TOUCH
   if (button == Button::Confirm && wasPowerConfirmClick()) return true;
 #endif
@@ -306,7 +322,9 @@ bool MappedInputManager::wasPressed(const Button button) const {
 }
 
 bool MappedInputManager::wasReleased(const Button button) const {
-  if (button == Button::Back && wasBackGesture()) return true;
+  if (button == Button::Back &&
+      (wasBackGesture() || wasHomeKeyAction(CrossPointSettings::HOME_KEY_BACK)))
+    return true;
 #if FREEINK_CAP_TOUCH
   if (button == Button::Confirm && wasPowerConfirmClick()) return true;
 #endif

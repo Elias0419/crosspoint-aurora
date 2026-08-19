@@ -33,7 +33,19 @@ constexpr int kThumbWidth = 150;   // Featured cover thumbnail width (~2:3)
 constexpr int kTextGap = 16;       // Gap between thumbnail and title block
 constexpr int kIconSize = 32;      // Placeholder cover glyph / bottom-bar icon size
 constexpr int kSectionGap = 28;    // Gap above the "Library" header
-constexpr int kBottomBarHeight = 70;
+constexpr int kBottomBarHeight = 84;  // reserved strip: floating dock + gaps
+
+// iOS-style dock geometry inside the reserved bottom strip. HomeTabBar::hitTest
+// mirrors the side margin — keep them in sync.
+constexpr int kDockSideMargin = 20;
+constexpr int kDockTopGap = 6;
+constexpr int kDockBottomGap = 10;
+constexpr int kDockRadius = 22;
+
+Rect dockRect(const Rect& barRect) {
+  return Rect(barRect.x + kDockSideMargin, barRect.y + kDockTopGap, barRect.width - 2 * kDockSideMargin,
+              barRect.height - kDockTopGap - kDockBottomGap);
+}
 constexpr int kProgBarHeight = 10;     // "Now Reading" progress bar height
 constexpr int kCardHeight = 76;        // Recent-book card height
 constexpr int kCardGap = 8;            // Vertical gap between recent-book cards
@@ -50,6 +62,17 @@ constexpr int kSettingNameFontId = UI_10_FONT_ID;
 constexpr int kBarLabelFontId = SMALL_FONT_ID;
 constexpr int kCaptionFontId = SMALL_FONT_ID;
 constexpr int kSectionFontId = UI_12_FONT_ID;
+
+// Reader toolbar/panel geometry, shared by the draw functions and the
+// readerToolbarHitAreas/readerPanelHitAreas tap maps. Sized for fingers
+// (~48px ≈ 5mm at the T5S3's 234 PPI), not for button-driven selection.
+constexpr int kReaderTopBarH = 60;
+constexpr int kReaderBottomBarH = 208;
+constexpr int kScrubBtn = 52;         // prev/next chapter buttons (square)
+constexpr int kScrubRowY = 16;        // scrub row offset inside the bottom bar
+constexpr int kMetaRowY = 84;         // meta divider offset inside the bottom bar
+constexpr int kToolRowY = 116;        // tool row divider offset inside the bottom bar
+constexpr int kPanelRowH = 56;        // panel (Contents/Text/More) row height
 
 // Resolve a UIIcon to its 32px bitmap (mirrors LyraTheme's iconForName for the
 // icons the bottom bar uses; keeps Aurora self-contained).
@@ -87,8 +110,8 @@ int AuroraTheme::drawHeaderBar(const GfxRenderer& renderer, int x, int top, int 
     renderer.drawText(kTitleFontId, x + P, textY, t.c_str(), true, EpdFontFamily::BOLD);
   }
 
-  // Clock (center, X3 only — the X4 has no RTC).
-  if (gpio.deviceIsX3() && SETTINGS.statusBarClock && halClock.isAvailable()) {
+  // Clock (center, hh:mm) on any board whose RTC came up (X3, T5S3's PCF8563).
+  if (SETTINGS.statusBarClock && halClock.isAvailable()) {
     char timeBuf[9];
     if (halClock.formatTime(timeBuf, sizeof(timeBuf), SETTINGS.clockUtcOffsetQ, SETTINGS.clockFormat == 1)) {
       renderer.drawCenteredText(kCaptionFontId, textY, timeBuf);
@@ -347,49 +370,36 @@ void AuroraTheme::drawHomeScreen(GfxRenderer& renderer, Rect content, const std:
 
 int AuroraTheme::bottomBarHeight() const { return kBottomBarHeight; }
 
-void AuroraTheme::drawBottomBar(GfxRenderer& renderer, Rect barRect, const std::vector<std::string>& labels,
+void AuroraTheme::drawBottomBar(GfxRenderer& renderer, Rect barRect, const std::vector<std::string>& /*labels*/,
                                 const std::vector<UIIcon>& icons, int activeTab) const {
-  const int barCount = static_cast<int>(std::min(labels.size(), icons.size()));
+  // iOS-style dock: a floating rounded tray inset from the screen edges,
+  // icon-only slots, the active tab on a white rounded tile. No labels, no
+  // full-width rule, no edge chevrons. Keep the geometry in sync with
+  // dockRect()/HomeTabBar::hitTest.
+  const int barCount = static_cast<int>(icons.size());
   if (barCount <= 0) return;
 
-  const int barTop = barRect.y;
-  renderer.drawLine(barRect.x, barTop, barRect.x + barRect.width - 1, barTop);  // -1: endpoints are inclusive
-  const int slotW = barRect.width / barCount;
-  for (int i = 0; i < barCount; ++i) {
-    const int slotX = barRect.x + i * slotW;
-    const int centerX = slotX + slotW / 2;
+  const Rect dock = dockRect(barRect);
+  renderer.fillRoundedRect(dock.x, dock.y, dock.width, dock.height, kDockRadius, Color::LightGray);
 
-    // Active tab: light-gray rounded pill (the shared Aurora selection style).
+  const int slotW = dock.width / barCount;
+  for (int i = 0; i < barCount; ++i) {
+    const int slotX = dock.x + i * slotW;
+    const int centerX = slotX + slotW / 2;
+    const int centerY = dock.y + dock.height / 2;
+
+    // Active tab: a white rounded tile lifted out of the gray tray.
     if (i == activeTab) {
-      renderer.fillRoundedRect(slotX + 6, barTop + 5, slotW - 12, barRect.height - 10, 8, Color::LightGray);
+      const int tileW = std::min(slotW - 10, 64);
+      const int tileH = dock.height - 12;
+      renderer.fillRoundedRect(centerX - tileW / 2, centerY - tileH / 2, tileW, tileH, 12, Color::White);
     }
 
     const uint8_t* iconBitmap = barIconBitmap(icons[i]);
     if (iconBitmap != nullptr) {
-      renderer.drawIcon(iconBitmap, centerX - kIconSize / 2, barTop + 10, kIconSize);
+      renderer.drawIcon(iconBitmap, centerX - kIconSize / 2, centerY - kIconSize / 2, kIconSize);
     }
-
-    const auto style = (i == activeTab) ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
-    const auto label = renderer.truncatedText(kBarLabelFontId, labels[i].c_str(), slotW - 6, style);
-    const int labelWidth = renderer.getTextWidth(kBarLabelFontId, label.c_str(), style);
-    renderer.drawText(kBarLabelFontId, centerX - labelWidth / 2, barTop + 10 + kIconSize + 2, label.c_str(), true,
-                      style);
   }
-
-  // Small ◀ ▶ chevrons hugging the bar edges signal the whole tab bar is horizontally
-  // navigable (front Left/Right cycles tabs) — the cue that was previously invisible.
-  auto chevron = [&](int px, int cy, int size, bool pointLeft) {
-    if (pointLeft) {
-      renderer.drawLine(px + size, cy - size, px, cy);
-      renderer.drawLine(px, cy, px + size, cy + size);
-    } else {
-      renderer.drawLine(px - size, cy - size, px, cy);
-      renderer.drawLine(px, cy, px - size, cy + size);
-    }
-  };
-  const int chevronCy = barTop + barRect.height / 2;
-  chevron(barRect.x + 5, chevronCy, 4, true);
-  chevron(barRect.x + barRect.width - 5, chevronCy, 4, false);
 }
 
 void AuroraTheme::drawSettingsScreen(GfxRenderer& renderer, Rect content, const char* title,
@@ -405,10 +415,12 @@ void AuroraTheme::drawSettingsScreen(GfxRenderer& renderer, Rect content, const 
   const int listTop = dividerY + 10;
   const int listBottom = content.y + content.height;
   const int listHeight = std::max(0, listBottom - listTop);
-  const int rowH = kSettingRowHeight;
+  // Touch boards get finger-sized rows (~56px ≈ 6mm at 234 PPI); button boards
+  // keep the denser 40px rows. settingsItemAt mirrors these numbers.
+  const int rowH = gpio.hasTouch() ? 56 : kSettingRowHeight;
   // Section-header band: the label sits near the top (kHeaderTextTop) and the rest
   // is breathing room before the group's card, so names don't crowd their options.
-  const int headerH = 38;
+  const int headerH = gpio.hasTouch() ? 44 : 38;
   constexpr int kHeaderTextTop = 10;
   const int rightInset = SETTINGS.showEdgeButtonHints() ? (metrics.sideButtonHintsWidth + 10) : 0;
   const int rowLeft = P - 4;
@@ -517,6 +529,66 @@ void AuroraTheme::drawSettingsScreen(GfxRenderer& renderer, Rect content, const 
       }
     }
   }
+}
+
+int AuroraTheme::settingsItemAt(const GfxRenderer& renderer, Rect content, const std::vector<SettingsListItem>& items,
+                                int x, int y) const {
+  // Mirrors drawSettingsScreen's pagination and row grid exactly (same
+  // constants, same page-partition walk); keep the two in sync.
+  const auto& metrics = AuroraMetrics::values;
+  const int W = content.width;
+  const int P = metrics.contentSidePadding;
+  const int dividerY = content.y + kStatusY + kDividerGap;
+  const int listTop = dividerY + 10;
+  const int listBottom = content.y + content.height;
+  const int listHeight = std::max(0, listBottom - listTop);
+  const int rowH = gpio.hasTouch() ? 56 : kSettingRowHeight;
+  const int headerH = gpio.hasTouch() ? 44 : 38;
+  const int rightInset = SETTINGS.showEdgeButtonHints() ? (metrics.sideButtonHintsWidth + 10) : 0;
+  const int rowLeft = P - 4;
+  const int rowRight = W - (P - 4) - rightInset;
+  if (x < rowLeft || x >= rowRight) return -1;
+
+  const int n = static_cast<int>(items.size());
+  auto itemH = [&](int i) { return items[i].isHeader ? headerH : rowH; };
+  int selItem = 0;
+  for (int i = 0; i < n; ++i) {
+    if (items[i].selected) {
+      selItem = i;
+      break;
+    }
+  }
+  std::vector<int> pageStarts = {0};
+  {
+    int acc = 0;
+    for (int i = 0; i < n; ++i) {
+      const int h = itemH(i);
+      if (acc + h > listHeight && i > pageStarts.back()) {
+        pageStarts.push_back(i);
+        acc = 0;
+      }
+      acc += h;
+    }
+  }
+  int pageStart = 0;
+  int pageEnd = n;
+  for (int p = 0; p < static_cast<int>(pageStarts.size()); ++p) {
+    const int start = pageStarts[p];
+    const int end = (p + 1 < static_cast<int>(pageStarts.size())) ? pageStarts[p + 1] : n;
+    if (selItem >= start && selItem < end) {
+      pageStart = start;
+      pageEnd = end;
+      break;
+    }
+  }
+  int rowY = listTop;
+  for (int i = pageStart; i < pageEnd; ++i) {
+    const int h = itemH(i);
+    if (rowY + h > listBottom) break;
+    if (y >= rowY && y < rowY + h && !items[i].isHeader) return i;
+    rowY += h;
+  }
+  return -1;
 }
 
 void AuroraTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* title, const char* subtitle) const {
@@ -725,7 +797,7 @@ void AuroraTheme::drawReaderToolbar(GfxRenderer& renderer, Rect screen, const Re
   };
 
   // --- Top bar: back chevron (left), centered book title, focus indicator (right) ---
-  const int topH = 50;
+  const int topH = kReaderTopBarH;
   renderer.fillRect(X, Y, W, topH, false);              // clear the page text behind the bar
   renderer.drawLine(X, Y + topH, X + W - 1, Y + topH);  // -1: drawLine endpoints are inclusive
 
@@ -748,67 +820,66 @@ void AuroraTheme::drawReaderToolbar(GfxRenderer& renderer, Rect screen, const Re
   drawBatteryRight(renderer, Rect{X + W - pad - m.batteryWidth, batteryY, m.batteryWidth, m.batteryHeight},
                    showBatteryPercentage);
 
-  // --- Bottom bar: scrub row, meta row, tool row ---
-  const int bottomH = 160;
+  // --- Bottom bar: scrub row, meta row, tool row (touch-sized) ---
+  const int bottomH = kReaderBottomBarH;
   const int by = Y + H - bottomH;
   renderer.fillRect(X, by, W, bottomH, false);
   renderer.drawLine(X, by, X + W - 1, by);
 
   // Scrub row: prev/next chapter buttons flanking a progress track + knob.
-  const int btn = 34;
-  const int sy = by + 16;
+  const int btn = kScrubBtn;
+  const int sy = by + kScrubRowY;
   const int leftBtnX = X + 16;
   const int rightBtnX = X + W - 16 - btn;
-  renderer.drawRoundedRect(leftBtnX, sy, btn, btn, 1, 7, true);
-  renderer.drawRoundedRect(rightBtnX, sy, btn, btn, 1, 7, true);
-  chevron(leftBtnX + btn / 2, sy + btn / 2, 6, true);
-  chevron(rightBtnX + btn / 2, sy + btn / 2, 6, false);
+  renderer.drawRoundedRect(leftBtnX, sy, btn, btn, 1, 12, true);
+  renderer.drawRoundedRect(rightBtnX, sy, btn, btn, 1, 12, true);
+  chevron(leftBtnX + btn / 2, sy + btn / 2, 8, true);
+  chevron(rightBtnX + btn / 2, sy + btn / 2, 8, false);
   const int trackX0 = leftBtnX + btn + 14;
   const int trackX1 = rightBtnX - 14;
   const int trackY = sy + btn / 2;
   renderer.drawLine(trackX0, trackY, trackX1, trackY, 2, true);
   const float prog = std::max(0.0f, std::min(1.0f, info.progress));
   const int knobX = trackX0 + static_cast<int>(prog * (trackX1 - trackX0));
-  renderer.fillRoundedRect(knobX - 6, trackY - 6, 12, 12, 6, Color::Black);
+  renderer.fillRoundedRect(knobX - 8, trackY - 8, 16, 16, 8, Color::Black);
 
   // Meta row: chapter title (left), chapter page X/Y + book percent (right).
-  // Sit nearer the scrub row so the title isn't crowded against the tool-row rule
-  // below it (the scrub→meta gap had slack to spare).
-  const int my = by + 58;
+  const int my = by + kMetaRowY;
   renderer.drawLine(X + 16, my, X + W - 16, my);
   if (info.chapterTitle != nullptr && info.chapterTitle[0] != '\0') {
     const auto ch = renderer.truncatedText(kCaptionFontId, info.chapterTitle, W / 2 - pad, EpdFontFamily::BOLD);
-    renderer.drawText(kCaptionFontId, X + pad, my + 7, ch.c_str(), true, EpdFontFamily::BOLD);
+    renderer.drawText(kCaptionFontId, X + pad, my + 6, ch.c_str(), true, EpdFontFamily::BOLD);
   }
   const std::string pageInfo = std::string(tr(STR_PAGE_LABEL)) + " " + std::to_string(info.chapterPage) + "/" +
                                std::to_string(info.chapterPageCount) + "   " + std::to_string(info.bookPercent) + "%";
   const int pw = renderer.getTextWidth(kCaptionFontId, pageInfo.c_str(), EpdFontFamily::BOLD);
-  renderer.drawText(kCaptionFontId, X + W - pad - pw, my + 7, pageInfo.c_str(), true, EpdFontFamily::BOLD);
+  renderer.drawText(kCaptionFontId, X + W - pad - pw, my + 6, pageInfo.c_str(), true, EpdFontFamily::BOLD);
 
-  // Tool row: Contents / Text / More, focused one in a rounded pill. Glyphs drawn
-  // from primitives (hamburger / "Aa" / three dots) to avoid font-glyph deps.
-  const int ty = by + 90;
+  // Tool row: Contents / Text / More, focused one in a rounded pill sized to
+  // the full tap slot. Glyphs drawn from primitives (hamburger / "Aa" / dots).
+  const int ty = by + kToolRowY;
   renderer.drawLine(X + 16, ty, X + W - 16, ty);
   const char* labels[3] = {tr(STR_TOOL_CONTENTS), tr(STR_TOOL_TEXT), tr(STR_TOOL_MORE)};
   const int slotW = W / 3;
   for (int i = 0; i < 3; ++i) {
     const int cx = X + slotW * i + slotW / 2;
     if (i == info.focusedTool) {
-      renderer.drawRoundedRect(cx - 44, ty + 6, 88, 40, 2, 10, true);
+      renderer.drawRoundedRect(cx - slotW / 2 + 10, ty + 8, slotW - 20, bottomH - kToolRowY - 16, 2, 14, true);
     }
-    const int gy = ty + 14;
+    const int gy = ty + 20;
     if (i == 0) {  // Contents: hamburger
-      for (int k = 0; k < 3; ++k) renderer.drawLine(cx - 12, gy + k * 6, cx + 12, gy + k * 6, 2, true);
+      for (int k = 0; k < 3; ++k) renderer.drawLine(cx - 13, gy + k * 7, cx + 13, gy + k * 7, 2, true);
     } else if (i == 1) {  // Text: "Aa"
       const int aw = renderer.getTextWidth(kTitleFontId, "Aa", EpdFontFamily::BOLD);
-      renderer.drawText(kTitleFontId, cx - aw / 2, ty + 8, "Aa", true, EpdFontFamily::BOLD);
+      renderer.drawText(kTitleFontId, cx - aw / 2, ty + 12, "Aa", true, EpdFontFamily::BOLD);
     } else {  // More: three dots
-      for (int k = -1; k <= 1; ++k) renderer.fillRect(cx + k * 8 - 1, gy + 6, 3, 3, true);
+      for (int k = -1; k <= 1; ++k) renderer.fillRect(cx + k * 9 - 1, gy + 8, 4, 4, true);
     }
     const int lw = renderer.getTextWidth(kBarLabelFontId, labels[i], EpdFontFamily::BOLD);
-    renderer.drawText(kBarLabelFontId, cx - lw / 2, ty + 46, labels[i], true, EpdFontFamily::BOLD);
+    renderer.drawText(kBarLabelFontId, cx - lw / 2, ty + 52, labels[i], true, EpdFontFamily::BOLD);
   }
 }
+
 
 void AuroraTheme::drawReaderPanel(GfxRenderer& renderer, Rect screen, const char* title, int itemCount,
                                   int selectedIndex, const std::function<std::string(int)>& rowText,
@@ -831,10 +902,45 @@ void AuroraTheme::drawReaderPanel(GfxRenderer& renderer, Rect screen, const char
   renderer.drawLine(X + P, dividerY, X + W - P, dividerY);
 
   const int contentTop = dividerY + 10;
-  const int hintReserve = 44;  // leave room for the button hint row at the bottom
+  // Touch boards get no hint row; keep a small bottom inset so the last row
+  // doesn't kiss the screen edge.
+  const int hintReserve = gpio.hasTouch() ? 12 : 44;
   const int contentH = (Y + H) - contentTop - hintReserve;
-  drawList(renderer, Rect{X, contentTop, W, contentH}, itemCount, selectedIndex, rowText, nullptr, nullptr, rowValue,
-           true);
+
+  // Rows rendered here (not via drawList) at a finger-sized kPanelRowH: name
+  // left, value right, rounded selection pill. readerPanelHitAreas mirrors
+  // this grid exactly.
+  const int pageItems = contentH / kPanelRowH;
+  if (pageItems <= 0 || itemCount <= 0) return;
+  const int pageStart = (selectedIndex >= 0 ? selectedIndex : 0) / pageItems * pageItems;
+  const int nameLineH = renderer.getLineHeight(kBodyFontId);
+  const int textDy = (kPanelRowH - nameLineH) / 2;
+  for (int slot = 0; slot < pageItems; ++slot) {
+    const int i = pageStart + slot;
+    if (i >= itemCount) break;
+    const int rowY = contentTop + slot * kPanelRowH;
+    if (i == selectedIndex) {
+      renderer.fillRoundedRect(X + P - 6, rowY + 2, W - 2 * (P - 6), kPanelRowH - 4, 12, Color::LightGray);
+    }
+    std::string value = rowValue ? rowValue(i) : std::string();
+    const int valueW =
+        value.empty() ? 0 : renderer.getTextWidth(kBodyFontId, value.c_str(), EpdFontFamily::BOLD);
+    const int nameMaxW = W - 2 * P - (valueW > 0 ? valueW + 16 : 0);
+    const auto name = renderer.truncatedText(kBodyFontId, rowText(i).c_str(), nameMaxW);
+    renderer.drawText(kBodyFontId, X + P, rowY + textDy, name.c_str());
+    if (valueW > 0) {
+      renderer.drawText(kBodyFontId, X + W - P - valueW, rowY + textDy, value.c_str(), true, EpdFontFamily::BOLD);
+    }
+  }
+
+  // Page position indicator on the right edge when the list spans pages.
+  const int totalPages = (itemCount + pageItems - 1) / pageItems;
+  if (totalPages > 1) {
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d/%d", pageStart / pageItems + 1, totalPages);
+    const int tw = renderer.getTextWidth(kCaptionFontId, buf);
+    renderer.drawText(kCaptionFontId, X + W - P - tw, titleY + 4, buf);
+  }
 }
 
 HomeHitLayout AuroraTheme::homeHitLayout(const GfxRenderer& renderer) const {
@@ -865,21 +971,21 @@ ReaderToolbarHit AuroraTheme::readerToolbarHitAreas(const GfxRenderer& renderer)
   const int W = renderer.getScreenWidth();
   const int H = renderer.getScreenHeight();
   ReaderToolbarHit hit;
-  const int topH = 50;
+  const int topH = kReaderTopBarH;
   hit.topBar = Rect{0, 0, W, topH};
-  const int bottomH = 160;
+  const int bottomH = kReaderBottomBarH;
   const int by = H - bottomH;
   hit.bottomTop = by;
-  const int btn = 34;
-  const int sy = by + 16;
-  // Pad the 34px scrub buttons out to finger size; the row is otherwise empty.
-  const int slop = 10;
+  const int btn = kScrubBtn;
+  const int sy = by + kScrubRowY;
+  // A little slop around the scrub controls; the row is otherwise empty.
+  const int slop = 6;
   hit.prevBtn = Rect{16 - slop, sy - slop, btn + 2 * slop, btn + 2 * slop};
   hit.nextBtn = Rect{W - 16 - btn - slop, sy - slop, btn + 2 * slop, btn + 2 * slop};
   const int trackX0 = 16 + btn + 14;
   const int trackX1 = W - 16 - btn - 14;
   hit.track = Rect{trackX0, sy - slop, trackX1 - trackX0, btn + 2 * slop};
-  const int ty = by + 90;
+  const int ty = by + kToolRowY;
   const int slotW = W / 3;
   for (int i = 0; i < 3; ++i) hit.tools[i] = Rect{slotW * i, ty, slotW, H - ty};
   hit.valid = true;
@@ -894,8 +1000,8 @@ ReaderPanelHit AuroraTheme::readerPanelHitAreas(const GfxRenderer& renderer) con
   const int titleY = hit.panelTop + 14;
   const int dividerY = titleY + renderer.getLineHeight(kTitleFontId) + 8;
   hit.listTop = dividerY + 10;
-  hit.rowHeight = AuroraMetrics::values.listRowHeight;
-  const int hintReserve = 44;
+  hit.rowHeight = kPanelRowH;
+  const int hintReserve = gpio.hasTouch() ? 12 : 44;
   const int contentH = H - hit.listTop - hintReserve;
   hit.pageItems = hit.rowHeight > 0 ? contentH / hit.rowHeight : 0;
   hit.valid = hit.pageItems > 0;

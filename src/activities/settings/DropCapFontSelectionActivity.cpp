@@ -106,14 +106,53 @@ void DropCapFontSelectionActivity::loop() {
     return;
   }
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+  // Activate the selected row: first activation previews the font, a second
+  // one (row already previewed) commits it. Shared by Confirm and row taps.
+  const auto activateSelected = [this] {
     if (selectedIndex_ == previewIndex_) {
       commitAndFinish();
     } else {
       applyPreview(selectedIndex_);
       requestUpdate();
     }
+  };
+
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    activateSelected();
     return;
+  }
+
+  // Touch: tap a row to preview it, tap the previewed row again to choose it;
+  // swipe up/down pages the list. The grid mirrors render()'s GUI.drawList
+  // band (Aurora rows are listRowHeight tall, paged around the selection).
+  {
+    const int listTop = afterHeader + previewHeight + metrics_.verticalSpacing;
+    const int rowH = metrics_.listRowHeight;
+    const int listHeight = usableHeight - previewHeight - metrics_.verticalSpacing;
+    const int rows = rowH > 0 ? std::max(1, listHeight / rowH) : 0;
+    const int count = static_cast<int>(entries_.size());
+    int tx = 0;
+    int ty = 0;
+    if (rows > 0 && mappedInput.wasScreenTapped(tx, ty)) {
+      if (ty >= listTop) {
+        const int slot = (ty - listTop) / rowH;
+        const int pageStart = (selectedIndex_ >= 0 ? selectedIndex_ : 0) / rows * rows;
+        const int idx = pageStart + slot;
+        if (slot < rows && idx < count) {
+          selectedIndex_ = idx;
+          activateSelected();
+        }
+      }
+      return;
+    }
+    const auto swipe = mappedInput.wasSwipe();
+    if (rows > 0 && count > 0 &&
+        (swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down)) {
+      const int step = swipe == MappedInputManager::SwipeDir::Up ? rows : -rows;
+      selectedIndex_ = std::clamp(selectedIndex_ + step, 0, count - 1);
+      requestUpdate();
+      return;
+    }
   }
 
   const int listSize = static_cast<int>(entries_.size());

@@ -83,27 +83,65 @@ void FontSelectionActivity::loop() {
     return;
   }
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+  // Activate the selected row: first activation previews the family, a second
+  // one (row already previewed) commits it. Shared by Confirm and row taps.
+  const auto activateSelected = [this] {
     if (selectedIndex_ == previewFontIndex_) {
       handleSelection();
-    } else {
-      previewFontIndex_ = selectedIndex_;
-      const auto& font = fonts_[selectedIndex_];
-      if (font.isBuiltin) {
-        SETTINGS.fontFamily = font.settingIndex;
-        SETTINGS.sdFontFamilyName[0] = '\0';
-      } else if (registry_) {
-        const int sdIdx = font.settingIndex - CrossPointSettings::BUILTIN_FONT_COUNT;
-        const auto& families = registry_->getFamilies();
-        if (sdIdx < static_cast<int>(families.size())) {
-          strncpy(SETTINGS.sdFontFamilyName, families[sdIdx].name.c_str(), sizeof(SETTINGS.sdFontFamilyName) - 1);
-          SETTINGS.sdFontFamilyName[sizeof(SETTINGS.sdFontFamilyName) - 1] = '\0';
-          sdFontSystem.ensureLoaded(renderer);
+      return;
+    }
+    previewFontIndex_ = selectedIndex_;
+    const auto& font = fonts_[selectedIndex_];
+    if (font.isBuiltin) {
+      SETTINGS.fontFamily = font.settingIndex;
+      SETTINGS.sdFontFamilyName[0] = '\0';
+    } else if (registry_) {
+      const int sdIdx = font.settingIndex - CrossPointSettings::BUILTIN_FONT_COUNT;
+      const auto& families = registry_->getFamilies();
+      if (sdIdx < static_cast<int>(families.size())) {
+        strncpy(SETTINGS.sdFontFamilyName, families[sdIdx].name.c_str(), sizeof(SETTINGS.sdFontFamilyName) - 1);
+        SETTINGS.sdFontFamilyName[sizeof(SETTINGS.sdFontFamilyName) - 1] = '\0';
+        sdFontSystem.ensureLoaded(renderer);
+      }
+    }
+    requestUpdate();
+  };
+
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    activateSelected();
+    return;
+  }
+
+  // Touch: tap a row to preview it, tap the previewed row again to choose it;
+  // swipe up/down pages the list (same grid as the drop-cap picker).
+  {
+    const int listTop = afterHeader + previewHeight + metrics_.verticalSpacing;
+    const int rowH = metrics_.listRowHeight;
+    const int listHeight = usableHeight - previewHeight - metrics_.verticalSpacing;
+    const int rows = rowH > 0 ? std::max(1, listHeight / rowH) : 0;
+    const int count = static_cast<int>(fonts_.size());
+    int tx = 0;
+    int ty = 0;
+    if (rows > 0 && mappedInput.wasScreenTapped(tx, ty)) {
+      if (ty >= listTop) {
+        const int slot = (ty - listTop) / rowH;
+        const int pageStart = (selectedIndex_ >= 0 ? selectedIndex_ : 0) / rows * rows;
+        const int idx = pageStart + slot;
+        if (slot < rows && idx < count) {
+          selectedIndex_ = idx;
+          activateSelected();
         }
       }
-      requestUpdate();
+      return;
     }
-    return;
+    const auto swipe = mappedInput.wasSwipe();
+    if (rows > 0 && count > 0 &&
+        (swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down)) {
+      const int step = swipe == MappedInputManager::SwipeDir::Up ? rows : -rows;
+      selectedIndex_ = std::clamp(selectedIndex_ + step, 0, count - 1);
+      requestUpdate();
+      return;
+    }
   }
 
   const int listSize = static_cast<int>(fonts_.size());

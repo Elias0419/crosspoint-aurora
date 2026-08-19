@@ -370,6 +370,13 @@ class BaseTheme {
   // structs' comments). Themes that own the layout must keep these in sync
   // with their draw functions.
   virtual HomeHitLayout homeHitLayout(const GfxRenderer&) const { return {}; }
+  // Item index (into `items`) under logical point (x, y) on the theme-owned
+  // settings screen, or -1. Only non-header rows hit. `content` must be the
+  // same rect the caller passes to drawSettingsScreen.
+  virtual int settingsItemAt(const GfxRenderer&, Rect /*content*/, const std::vector<SettingsListItem>& /*items*/,
+                             int /*x*/, int /*y*/) const {
+    return -1;
+  }
   virtual ReaderToolbarHit readerToolbarHitAreas(const GfxRenderer&) const { return {}; }
   virtual ReaderPanelHit readerPanelHitAreas(const GfxRenderer&) const { return {}; }
   virtual void drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount, int selectedIndex,

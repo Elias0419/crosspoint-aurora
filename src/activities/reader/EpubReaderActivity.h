@@ -64,6 +64,10 @@ class EpubReaderActivity final : public ReaderActivity {
   static constexpr unsigned long PANEL_HOLD_MS = 1500;
   static constexpr int PANEL_HOLD_STEP = 10;
   bool panelHoldJumped = false;
+  // True while a clean-page snapshot (renderer.storeBwBuffer) backs the open
+  // overlay, letting panel->toolbar steps restore the page without a full
+  // re-render. Discarded on close / whenever the page under the overlay changes.
+  bool overlayPageStored = false;
   int autoTurnOption = 0;  // current auto page-turn rate index (More panel)
   std::vector<EpubReaderMenuActivity::MenuAction> moreActions;
 
@@ -104,6 +108,7 @@ class EpubReaderActivity final : public ReaderActivity {
   void rememberCurrentContentOffset();
   // Aurora reader overlays (toolbar + Contents/Text/More panels over the page).
   void openOverlay(Overlay target);
+  void discardOverlayPage();
   void handleOverlayInput();
   void renderOverlay();
   std::string currentChapterTitle() const;

@@ -81,9 +81,13 @@ class MappedInputManager {
   // Back = left-to-right swipe anchored at the left edge. Public so swipe-mode
   // page turns (reader) can exclude it from a plain SwipeDir::Right.
   bool wasBackGesture() const;
-  // Home-key boards use a short Home-key tap to exit; their bottom-edge swipe
-  // is intentionally unused. Other boards retain the bottom-edge Home gesture.
-  // The reader menu remains on its existing top-edge gesture and middle tap.
+  // True when the capacitive home key tapped while bound to `function` (a
+  // CrossPointSettings::HOME_KEY_FUNCTION value). The key's action is
+  // user-selectable; Back is the default.
+  bool wasHomeKeyAction(uint8_t function) const;
+  // Home = a home-key tap bound to HOME_KEY_HOME, or the bottom-edge-up swipe
+  // (kept as the universal Home path on every touch board). The reader menu
+  // remains on its existing top-edge gesture and middle tap.
   bool wasHomeGesture() const;
   // A Home-key hold runs the configured long-press action in the reader.
   bool wasHomeKeyHold() const;

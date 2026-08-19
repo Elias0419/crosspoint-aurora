@@ -24,6 +24,7 @@ enum class SettingAction {
   Language,
   DownloadFonts,
   TextSettings,
+  OpenAdvanced,  // Aurora flat layout: open the Advanced Settings sub-page
 };
 
 struct SettingInfo {
@@ -150,6 +151,30 @@ struct SettingInfo {
 };
 
 class SettingsActivity final : public UiTabListActivity {
+  // --- Aurora flat layout (ownsSettingsLayout themes) ---------------------
+  // A curated flat list of sections + rows (top level), with everything else
+  // behind an "Advanced Settings" sub-page. Rendered via GUI.drawSettingsScreen
+  // and driven from handleCustomInput()/render() branches, bypassing the
+  // category-tab FreeInkUI presentation below.
+  struct AuroraEntry {
+    bool isHeader = false;
+    StrId header = StrId::STR_NONE_OPT;  // section label when isHeader
+    SettingInfo setting;                 // value/action row when !isHeader
+  };
+  const bool advancedPage;  // true = the "Advanced Settings" sub-page
+  std::vector<AuroraEntry> auroraEntries;
+  int auroraSelectableCount = 0;  // number of non-header rows
+  int auroraSelected = 0;         // selected row (index among non-header rows)
+
+  static bool isTopLevelSetting(StrId nameId);
+  void buildAuroraEntries();
+  const SettingInfo* auroraSelectedSetting() const;
+  std::vector<SettingsListItem> buildSettingsItems() const;
+  Rect auroraContentRect() const;
+  bool handleAuroraInput();
+  void renderAurora();
+  void activateSetting(const SettingInfo& setting);
+
   int selectedCategoryIndex = 0;  // Currently selected category
   int settingsCount = 0;
 
@@ -201,7 +226,7 @@ class SettingsActivity final : public UiTabListActivity {
   void syncQuickResumeTimeoutForSleepScreen(bool sleepScreenChanged, bool quickResumeTimeoutChanged);
 
  public:
-  explicit SettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
+  explicit SettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool advanced = false);
   void onEnter() override;
   void onExit() override;
   void render(RenderLock&&) override;

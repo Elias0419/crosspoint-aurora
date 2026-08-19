@@ -200,6 +200,13 @@ void HomeActivity::loop() {
       int tx = 0;
       int ty = 0;
       if (mappedInput.wasScreenTapped(tx, ty) && ty < hit.barTop) {
+        // Right-edge strip pages the library list by taps (tap-first UX).
+        if (listCount > 1 && hit.pageItems > 0 && ty >= hit.listTop && tx >= renderer.getScreenWidth() - 40) {
+          const int step = ty >= (hit.listTop + hit.barTop) / 2 ? hit.pageItems : -hit.pageItems;
+          homeListIndex = std::clamp(homeListIndex + step, 0, listCount - 1);
+          requestUpdate();
+          return;
+        }
         if (listCount > 0 && ty >= hit.featuredTop && ty < hit.featuredBottom) {
           onSelectBook(recentBooks[0].path);
           return;

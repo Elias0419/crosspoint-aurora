@@ -155,6 +155,16 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     REFRESH_FREQUENCY_COUNT
   };
 
+  // Capacitive home-key tap actions (GT911 boards). The key's long press keeps
+  // running LONG_PRESS_MENU_FUNCTION in the reader regardless of this choice.
+  enum HOME_KEY_FUNCTION {
+    HOME_KEY_BACK = 0,
+    HOME_KEY_HOME = 1,
+    HOME_KEY_LIGHT = 2,
+    HOME_KEY_SLEEP = 3,
+    HOME_KEY_FUNCTION_COUNT
+  };
+
   // Short power button press actions
   enum SHORT_PWRBTN {
     IGNORE = 0,
@@ -245,6 +255,9 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t textAntiAliasing = 1;
   // Short power button click behaviour
   uint8_t shortPwrBtn = IGNORE;
+  // Capacitive home-key tap action (GT911 boards). Persisted by index — append
+  // new values at the END of HOME_KEY_FUNCTION and the SettingsList enumValues.
+  uint8_t homeKeyFunction = HOME_KEY_BACK;
   // EPUB reading orientation settings
   // 0 = portrait (default), 1 = landscape clockwise, 2 = inverted, 3 = landscape counter-clockwise
   uint8_t orientation = PORTRAIT;

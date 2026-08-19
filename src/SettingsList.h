@@ -383,6 +383,11 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                           "longPressButtonBehavior", StrId::STR_CAT_CONTROLS),
         SettingInfo::Enum(StrId::STR_LONG_PRESS_MENU, &CrossPointSettings::longPressMenuFunction,
                           buildLongPressMenuValues(), "longPressMenuFunction", StrId::STR_CAT_CONTROLS),
+        // Capacitive home-key tap action (filtered out below on keyless boards).
+        // Order must match CrossPointSettings::HOME_KEY_FUNCTION.
+        SettingInfo::Enum(StrId::STR_HOME_KEY_FUNCTION, &CrossPointSettings::homeKeyFunction,
+                          {StrId::STR_ACTION_BACK, StrId::STR_ACTION_HOME, StrId::STR_FRONTLIGHT, StrId::STR_SLEEP},
+                          "homeKeyFunction", StrId::STR_CAT_CONTROLS),
 #if FREEINK_CAP_TOUCH
         SettingInfo::Enum(StrId::STR_SHORT_PWR_BTN, &CrossPointSettings::shortPwrBtn,
                           {StrId::STR_IGNORE, StrId::STR_SLEEP, StrId::STR_PAGE_TURN, StrId::STR_FORCE_REFRESH,
@@ -535,7 +540,10 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
   // primary path and stays on.
   if (!BoardConfig::hasHomeKey()) {
     v.erase(std::remove_if(v.begin(), v.end(),
-                           [](const SettingInfo& s) { return s.nameId == StrId::STR_TAP_FOR_READER_MENU; }),
+                           [](const SettingInfo& s) {
+                             return s.nameId == StrId::STR_TAP_FOR_READER_MENU ||
+                                    s.nameId == StrId::STR_HOME_KEY_FUNCTION;
+                           }),
             v.end());
   }
   if (BoardConfig::hasTouch()) {

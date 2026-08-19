@@ -348,6 +348,10 @@ class GfxRenderer {
   bool combinesGrayscaleBase() const;
   bool storeBwBuffer();    // Returns true if buffer was stored successfully
   void restoreBwBuffer();  // Restore and free the stored buffer
+  // Free a stored buffer without copying it back — for callers that stored a
+  // page snapshot they no longer need (e.g. the reader overlay's page copy
+  // going stale on a chapter jump).
+  void discardStoredBwBuffer() { freeBwBufferChunks(); }
   void cleanupGrayscaleWithFrameBuffer() const;
 
   // Font helpers
