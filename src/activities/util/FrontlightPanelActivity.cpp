@@ -275,7 +275,12 @@ void FrontlightPanelActivity::loop() {
       if (touch.event.dragPermille >= 0) draggingSlider = true;
       return;
     }
-    if (touch.snap.touchReleased && !draggingSlider && touch.snap.touchY >= panelBottom) {
+    // panelBottom > 0 guards the frame the sheet opens in: the release that
+    // opened it (a status-bar tap) is still in the input snapshot when the panel
+    // runs its first loop(), and panelBottom is only known once render() has
+    // measured the layout — so at 0 that release read as "tapped below the
+    // sheet" and closed it again before it was ever drawn.
+    if (touch.snap.touchReleased && !draggingSlider && panelBottom > 0 && touch.snap.touchY >= panelBottom) {
       close();
       return;
     }

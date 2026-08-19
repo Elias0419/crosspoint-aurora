@@ -110,6 +110,11 @@ class MappedInputManager {
   bool wasAnyPressed() const;
   bool wasAnyReleased() const;
   unsigned long getHeldTime() const;
+  // True when this frame's Back came from something other than a physical Back
+  // button — a home-key tap bound to Back, or the button dispatcher. There is no
+  // press behind it, so getHeldTime() carries an unrelated button's duration:
+  // callers that branch on short-vs-long press must treat this as a short one.
+  bool wasSyntheticBack() const;
   const GfxRenderer& getRenderer() const { return renderer; }
   Labels mapLabels(const char* back, const char* confirm, const char* previous, const char* next) const;
   // Maps four screen-direction labels onto the two physical front-button roles

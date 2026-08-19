@@ -249,7 +249,11 @@ inline bool handleBackNavigation(const MappedInputManager& mappedInput, Activity
 
   if (!mappedInput.wasReleased(MappedInputManager::Button::Back)) return false;
 
-  const bool longPress = mappedInput.getHeldTime() >= GO_BACK_OR_HOME_MS;
+  // A synthetic Back (home-key tap bound to Back, or a key bound to it through
+  // the dispatcher) has no press duration of its own — getHeldTime() would hand
+  // back whatever physical button was held last, which read as a long press and
+  // sent a home-key tap to the file browser instead of the library.
+  const bool longPress = !mappedInput.wasSyntheticBack() && mappedInput.getHeldTime() >= GO_BACK_OR_HOME_MS;
   if (longPress != SETTINGS.backShortToFileBrowser) {
     activityManager.goToFileBrowser(filePath);
   } else {

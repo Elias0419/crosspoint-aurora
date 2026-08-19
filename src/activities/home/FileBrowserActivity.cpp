@@ -12,8 +12,8 @@
 #include "MappedInputManager.h"
 #include "activities/util/ConfirmationActivity.h"
 #include "activities/util/ContextMenuActivity.h"
-#include "activities/util/KeyboardEntryActivity.h"
 #include "activities/util/HomeTabBar.h"
+#include "activities/util/KeyboardEntryActivity.h"
 #include "components/UITheme.h"
 #include "components/UiAppHelpers.h"
 #include "fontIds.h"
@@ -466,8 +466,8 @@ bool FileBrowserActivity::handleCustomInput() {
   // the button is still held (no need to release first). `contextMenuArmed` fires it once per
   // hold and resets whenever Confirm is up, so a later short press still opens normally.
   if (mode == Mode::Books && mappedInput.isPressed(MappedInputManager::Button::Confirm)) {
-    if (!contextMenuArmed && !lockNextConfirmRelease && !files.empty() &&
-        mappedInput.getHeldTime() >= GO_HOME_MS && nav.selected >= 0 && nav.selected < listCount()) {
+    if (!contextMenuArmed && !lockNextConfirmRelease && !files.empty() && mappedInput.getHeldTime() >= GO_HOME_MS &&
+        nav.selected >= 0 && nav.selected < listCount()) {
       contextMenuArmed = true;
       showContextMenu(files[nav.selected]);
       return true;
@@ -484,8 +484,10 @@ bool FileBrowserActivity::handleCustomInput() {
 
   // Long press BACK (1s+) goes to root folder (Books mode only).
   // In firmware-pick mode we keep navigation simple: short Back = up dir / cancel.
+  // A synthetic Back (home-key tap bound to Back) has no hold time of its own,
+  // so it must never read as a long press here.
   if (mode == Mode::Books && mappedInput.wasReleased(MappedInputManager::Button::Back) &&
-      mappedInput.getHeldTime() >= GO_HOME_MS && basepath != "/") {
+      !mappedInput.wasSyntheticBack() && mappedInput.getHeldTime() >= GO_HOME_MS && basepath != "/") {
     {
       // buildScreen() runs on the render task and reads basepath plus the
       // row caches rebuildRowItems() frees; mutate only under the render lock.
@@ -513,8 +515,9 @@ bool FileBrowserActivity::handleButtons() {
   }
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-    // Short press: go up one directory, or go home if at root
-    if (mappedInput.getHeldTime() < GO_HOME_MS) {
+    // Short press: go up one directory, or go home if at root. A synthetic Back
+    // (home-key tap bound to Back) counts as short — see wasSyntheticBack().
+    if (mappedInput.wasSyntheticBack() || mappedInput.getHeldTime() < GO_HOME_MS) {
       if (basepath != "/") {
         const std::string oldPath = basepath;
 

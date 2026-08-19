@@ -366,6 +366,10 @@ bool MappedInputManager::wasReleased(const Button button) const {
   return mapButton(button, &HalGPIO::wasReleased);
 }
 
+bool MappedInputManager::wasSyntheticBack() const {
+  return backActionRequested || wasHomeKeyAction(CrossPointSettings::BTN_ACT_BACK);
+}
+
 bool MappedInputManager::isPressed(const Button button) const { return mapButton(button, &HalGPIO::isPressed); }
 
 bool MappedInputManager::wasAnyPressed() const { return gpio.wasAnyPressed(); }

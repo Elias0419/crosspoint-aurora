@@ -478,8 +478,10 @@ void EpubReaderActivity::loop() {
     }
   }
 
+  // Same short-press rule as handleBackNavigation: a synthetic Back carries no
+  // hold time, so it counts as short (return from the footnote).
   if (footnoteDepth > 0 && mappedInput.wasReleased(MappedInputManager::Button::Back) &&
-      mappedInput.getHeldTime() < ReaderUtils::GO_BACK_OR_HOME_MS) {
+      (mappedInput.wasSyntheticBack() || mappedInput.getHeldTime() < ReaderUtils::GO_BACK_OR_HOME_MS)) {
     restoreSavedPosition();
     return;
   }
