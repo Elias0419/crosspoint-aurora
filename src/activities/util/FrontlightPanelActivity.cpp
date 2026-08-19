@@ -381,10 +381,15 @@ void FrontlightPanelActivity::addSliderRow(UiScreen& screen, const char* label, 
   const int16_t cap = static_cast<int16_t>(inner.height / 2);
   const int16_t travel = static_cast<int16_t>(inner.width - 2 * cap);
   const int16_t handleCx = static_cast<int16_t>(inner.x + cap + (travel * value) / 100);
-  const int16_t fillW = static_cast<int16_t>(handleCx - inner.x);
-  if (fillW > 0) {
-    screen.target().fill(fui::Rect{inner.x, inner.y, fillW, inner.height}, fui::Paint::solid(fui::Color::Black), cap,
-                         fui::CornerTopLeft | fui::CornerBottomLeft);
+  {
+    // The fill runs to the handle's far edge as a full stadium, so its right cap
+    // is a semicircle about the handle's own center and radius — entirely under
+    // the handle, touching the capsule only where the handle does. Ending the
+    // fill at the handle's center instead (or squaring its right edge) left its
+    // top and bottom corners poking out past the round handle: the black
+    // rectangle either side of it.
+    const int16_t w = static_cast<int16_t>(std::min<int>(inner.width, handleCx + cap - inner.x));
+    screen.target().fill(fui::Rect{inner.x, inner.y, w, inner.height}, fui::Paint::solid(fui::Color::Black), cap);
   }
   screen.target().stroke(row, fui::Paint::solid(fui::Color::Black), kStroke, kSliderTrackRadius);
   const fui::Rect handle{static_cast<int16_t>(handleCx - cap), inner.y, static_cast<int16_t>(cap * 2), inner.height};
