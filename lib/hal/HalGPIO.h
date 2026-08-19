@@ -46,6 +46,16 @@ class HalGPIO {
   bool lastUsbConnected = false;
   bool usbStateChanged = false;
 
+  // Serial-injected button state (see injectButton)
+  uint8_t pendingInjectButton = 0xFF;
+  unsigned long pendingInjectHoldMs = 0;
+  uint8_t injectedButton = 0xFF;
+  unsigned long injectedHoldMs = 0;
+  unsigned long injectedPressStart = 0;
+  bool injectActive = false;
+  bool injectPressEdge = false;
+  bool injectReleaseEdge = false;
+
  public:
   enum class DeviceType : uint8_t { X4, X3 };
 
@@ -106,6 +116,13 @@ class HalGPIO {
   void setSharedConfirmPowerShortPressEmitsPower(bool enabled);
 
   bool isPowerButtonPhysicallyPressed() const;
+
+  // Debug: fake a button press from the serial console (CMD:KEY:...). The
+  // press edge fires on the next update(), isPressed() stays true for holdMs,
+  // then the release edge fires — one edge per update() frame, mirroring how
+  // InputManager reports real buttons. Boards whose buttons don't physically
+  // exist (T5S3 has only the BOOT button) are driven entirely through this.
+  void injectButton(uint8_t buttonIndex, unsigned long holdMs = 0);
 
   // Verify power button was held long enough after wakeup.
   // Returns true if verification succeeded, false if device should return to sleep.

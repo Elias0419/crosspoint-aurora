@@ -646,10 +646,51 @@ void loop() {
       cmd.trim();
       if (cmd == "SCREENSHOT") {
         const uint32_t bufferSize = display.getBufferSize();
+        logSerial.printf("SCREENSHOT_DIM:%dx%d\n", renderer.getDisplayWidth(), renderer.getDisplayHeight());
         logSerial.printf("SCREENSHOT_START:%d\n", bufferSize);
         uint8_t* buf = display.getFrameBuffer();
-        logSerial.write(buf, bufferSize);
+        // HWCDC drops the tail of a large write once its 256-byte TX ring
+        // overruns the host's drain rate (a timeout flips its internal
+        // "connected" flag and the rest is discarded). Pace the dump to the
+        // USB drain rate: small chunks, flush between them, give up only if
+        // the host stops draining entirely.
+        uint32_t stalls = 0;
+        for (uint32_t off = 0; off < bufferSize && stalls < 400;) {
+          const uint32_t n = bufferSize - off < 256 ? bufferSize - off : 256;
+          const size_t w = logSerial.write(buf + off, n);
+          logSerial.flush();
+          if (w == 0) {
+            ++stalls;
+            delay(5);
+          } else {
+            stalls = 0;
+            off += w;
+          }
+        }
         logSerial.printf("SCREENSHOT_END\n");
+      } else if (cmd.startsWith("KEY:")) {
+        // CMD:KEY:<NAME>[:<holdMs>] — fake a button press (see HalGPIO::injectButton)
+        String name = cmd.substring(4);
+        unsigned long holdMs = 0;
+        const int colon = name.indexOf(':');
+        if (colon >= 0) {
+          holdMs = name.substring(colon + 1).toInt();
+          name = name.substring(0, colon);
+        }
+        int idx = -1;
+        if (name == "BACK") idx = HalGPIO::BTN_BACK;
+        else if (name == "CONFIRM") idx = HalGPIO::BTN_CONFIRM;
+        else if (name == "LEFT") idx = HalGPIO::BTN_LEFT;
+        else if (name == "RIGHT") idx = HalGPIO::BTN_RIGHT;
+        else if (name == "UP") idx = HalGPIO::BTN_UP;
+        else if (name == "DOWN") idx = HalGPIO::BTN_DOWN;
+        else if (name == "POWER") idx = HalGPIO::BTN_POWER;
+        if (idx >= 0) {
+          gpio.injectButton(static_cast<uint8_t>(idx), holdMs);
+          logSerial.printf("KEY_OK:%s:%lu\n", name.c_str(), holdMs);
+        } else {
+          logSerial.printf("KEY_ERR:%s\n", name.c_str());
+        }
       }
     }
   }

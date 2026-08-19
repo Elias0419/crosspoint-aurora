@@ -625,8 +625,10 @@ void AuroraTheme::drawList(const GfxRenderer& renderer, Rect rect, int itemCount
 
 void AuroraTheme::drawButtonHints(GfxRenderer& renderer, const char* btn1, const char* btn2, const char* btn3,
                                   const char* btn4) const {
-  // User can hide the on-screen button hint row for a cleaner layout.
-  if (!SETTINGS.showFrontButtonHints()) {
+  // User can hide the on-screen button hint row for a cleaner layout; touch
+  // devices never show it (getMetrics() also zeroes buttonHintsHeight there,
+  // so drawing it would overlap whatever claimed the reclaimed space).
+  if (gpio.hasTouch() || !SETTINGS.showFrontButtonHints()) {
     return;
   }
 
@@ -661,8 +663,9 @@ void AuroraTheme::drawButtonHints(GfxRenderer& renderer, const char* btn1, const
 }
 
 void AuroraTheme::drawSideButtonHints(const GfxRenderer& renderer, const char* topBtn, const char* bottomBtn) const {
-  // Edge hints only appear in the Front + Edge mode (the front row can show alone).
-  if (!SETTINGS.showEdgeButtonHints()) return;
+  // Edge hints only appear in the Front + Edge mode (the front row can show
+  // alone); touch devices never show the physical-button hints.
+  if (gpio.hasTouch() || !SETTINGS.showEdgeButtonHints()) return;
 
   // Same box positions/height as the base theme (they line up with the physical
   // side buttons); Aurora only narrows the strip and swaps the rotated "Up"/"Down"
