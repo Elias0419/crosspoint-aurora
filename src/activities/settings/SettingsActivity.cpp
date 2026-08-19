@@ -4,7 +4,6 @@
 #include <GfxRenderer.h>
 #include <HalDisplay.h>
 #include <Logging.h>
-
 #include <Utf8.h>
 
 #include <algorithm>
@@ -27,10 +26,10 @@
 #include "StatusBarSettingsActivity.h"
 #include "TextSettingsActivity.h"
 #include "activities/network/WifiSelectionActivity.h"
+#include "activities/util/HomeTabBar.h"
 #include "activities/util/IntervalSelectionActivity.h"
 #include "components/UITheme.h"
 #include "components/UIThemeTokens.h"
-#include "activities/util/HomeTabBar.h"
 #include "components/UiAppHelpers.h"
 #include "fontIds.h"
 
@@ -100,12 +99,7 @@ void SettingsActivity::rebuildSettingsLists() {
                         SettingInfo::Action(StrId::STR_TEXT_SETTINGS, SettingAction::TextSettings));
   readerSettings.insert(readerSettings.begin() + 1,
                         SettingInfo::Action(StrId::STR_MANAGE_FONTS, SettingAction::DownloadFonts));
-  // The persistent reader status bar is only drawn by themes that don't own the
-  // reader chrome (Aurora keeps the reading page clean and hides it), so its
-  // customisation entry would do nothing there — only offer it when it applies.
-  if (!GUI.ownsReaderChrome()) {
-    readerSettings.push_back(SettingInfo::Action(StrId::STR_CUSTOMISE_STATUS_BAR, SettingAction::CustomiseStatusBar));
-  }
+  readerSettings.push_back(SettingInfo::Action(StrId::STR_CUSTOMISE_STATUS_BAR, SettingAction::CustomiseStatusBar));
 
   // Update currentSettings pointer and count for the active category
   switch (selectedCategoryIndex) {
@@ -383,13 +377,11 @@ void SettingsActivity::buildAuroraEntries() {
     // Curated, important settings grouped into Reading / Display / Device.
     // Develop folds the font family/size/spacing rows into the Text Settings
     // screen (inTextSettings), so the curated section leads with that entry.
-    addSection(StrId::STR_SEC_READING,
-               {StrId::STR_TEXT_SETTINGS, StrId::STR_FONT_FAMILY, StrId::STR_MANAGE_FONTS, StrId::STR_DROP_CAPS,
-                StrId::STR_DROP_CAP_FONT, StrId::STR_FONT_SIZE, StrId::STR_LINE_SPACING, StrId::STR_SCREEN_MARGIN,
-                StrId::STR_PARA_ALIGNMENT});
-    addSection(StrId::STR_CAT_DISPLAY,
-               {StrId::STR_UI_THEME, StrId::STR_SLEEP_SCREEN, StrId::STR_REFRESH_FREQ, StrId::STR_SHOW_BUTTON_HINTS,
-                StrId::STR_HOME_KEY_FUNCTION});
+    addSection(StrId::STR_SEC_READING, {StrId::STR_TEXT_SETTINGS, StrId::STR_FONT_FAMILY, StrId::STR_MANAGE_FONTS,
+                                        StrId::STR_DROP_CAPS, StrId::STR_DROP_CAP_FONT, StrId::STR_FONT_SIZE,
+                                        StrId::STR_LINE_SPACING, StrId::STR_SCREEN_MARGIN, StrId::STR_PARA_ALIGNMENT});
+    addSection(StrId::STR_CAT_DISPLAY, {StrId::STR_UI_THEME, StrId::STR_SLEEP_SCREEN, StrId::STR_REFRESH_FREQ,
+                                        StrId::STR_SHOW_BUTTON_HINTS, StrId::STR_HOME_KEY_FUNCTION});
     addSection(StrId::STR_CAT_DEVICE,
                {StrId::STR_WIFI_NETWORKS, StrId::STR_TIME_TO_SLEEP, StrId::STR_LANGUAGE, StrId::STR_CHECK_UPDATES});
     // Spacer header (no label) so the entry below sits in its own card.

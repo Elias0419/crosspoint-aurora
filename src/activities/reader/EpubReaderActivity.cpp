@@ -32,8 +32,8 @@
 #include "MappedInputManager.h"
 #include "ProgressMapper.h"
 #include "QrDisplayActivity.h"
-#include "ReaderFontSizes.h"
 #include "ReaderActivity.h"
+#include "ReaderFontSizes.h"
 #include "ReaderUtils.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
@@ -1060,11 +1060,8 @@ void EpubReaderActivity::renderBook() {
 
   const uint8_t statusBarHeight = UITheme::getInstance().getStatusBarHeight();
 
-  if (GUI.ownsReaderChrome()) {
-    // Aurora: clean reading page, no persistent status bar — text fills the page.
-    orientedMarginBottom += SETTINGS.screenMargin;
-  } else if (automaticPageTurnActive &&
-             (statusBarHeight == 0 || statusBarHeight == UITheme::getInstance().getProgressBarHeight())) {
+  if (automaticPageTurnActive &&
+      (statusBarHeight == 0 || statusBarHeight == UITheme::getInstance().getProgressBarHeight())) {
     // reserves space for automatic page turn indicator when no status bar or progress bar only
     orientedMarginBottom +=
         std::max(SETTINGS.screenMargin,
@@ -1630,10 +1627,6 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
 }
 
 void EpubReaderActivity::renderStatusBar() const {
-  // Aurora owns the reader chrome: the reading page is kept clean (progress lives
-  // in the toolbar overlay), so there is no persistent bottom status bar.
-  if (GUI.ownsReaderChrome()) return;
-
   // Calculate progress in book. Use the estimated total while a giant spine is still building so
   // "page X of Y" and the progress bar don't read off the small build watermark.
   const int currentPage = section ? section->currentPage + 1 : 1;
@@ -1688,7 +1681,7 @@ void EpubReaderActivity::snapshotTextSettings() {
   textSnapshot.paragraphAlignment = SETTINGS.paragraphAlignment;
   textSnapshot.focusReadingEnabled = SETTINGS.focusReadingEnabled;
   strncpy(textSnapshot.sdFontFamilyName, SETTINGS.sdFontFamilyName, sizeof(textSnapshot.sdFontFamilyName) - 1);
-  textSnapshot.sdFontFamilyName[sizeof(textSnapshot.sdFontFamilyName) - 1] = ' ';
+  textSnapshot.sdFontFamilyName[sizeof(textSnapshot.sdFontFamilyName) - 1] = '\0';
 }
 
 bool EpubReaderActivity::textSettingsChanged() const {
