@@ -162,10 +162,20 @@ void applySystemUiFont() {
   const EpdFontFamily* f10 = &uiNoto10FontFamily;
   const EpdFontFamily* f12 = &uiNoto12FontFamily;
   switch (SETTINGS.systemFont) {
-    case CrossPointSettings::SYS_FONT_UBUNTU:      f10 = &uiUbuntu10FontFamily;   f12 = &uiUbuntu12FontFamily;   break;
-    case CrossPointSettings::SYS_FONT_EB_GARAMOND: f10 = &uiGaramond10FontFamily; f12 = &uiGaramond12FontFamily; break;
-    case CrossPointSettings::SYS_FONT_SFU_GOUDY:   f10 = &uiGoudy10FontFamily;    f12 = &uiGoudy12FontFamily;    break;
-    default: break;
+    case CrossPointSettings::SYS_FONT_UBUNTU:
+      f10 = &uiUbuntu10FontFamily;
+      f12 = &uiUbuntu12FontFamily;
+      break;
+    case CrossPointSettings::SYS_FONT_EB_GARAMOND:
+      f10 = &uiGaramond10FontFamily;
+      f12 = &uiGaramond12FontFamily;
+      break;
+    case CrossPointSettings::SYS_FONT_SFU_GOUDY:
+      f10 = &uiGoudy10FontFamily;
+      f12 = &uiGoudy12FontFamily;
+      break;
+    default:
+      break;
   }
   renderer.replaceFont(UI_10_FONT_ID, *f10);
   renderer.replaceFont(UI_12_FONT_ID, *f12);
@@ -335,6 +345,152 @@ void enterDeepSleep(bool fromTimeout = false) {
   powerManager.startDeepSleep(gpio);
 }
 
+// --- Configurable button actions ---------------------------------------------
+// Every physical key the T5S3 class of board offers (BOOT, the expander user
+// button labelled IO48, the capacitive Home key) has a user-chosen tap action
+// and hold action, drawn from one shared list (CrossPointSettings::
+// BUTTON_ACTION). Actions that already have a well-defined route through the
+// input layer (Back, Home, reader menu, control center, page turns) are raised
+// as frame-scoped requests so the owning activity handles them exactly as it
+// handles the equivalent gesture; the rest act globally right here.
+
+// Brief on-screen confirmation for an action with no visible surface of its
+// own (the touch kill-switch). Deliberately blocking: the user just pressed a
+// key and the panel needs long enough to be read.
+static void showActionToast(const char* text) {
+  {
+    RenderLock lock;
+    GUI.drawPopup(renderer, text);
+  }
+  delay(900);
+  activityManager.requestUpdate();
+}
+
+// Returns true when the action consumed this input frame entirely.
+static bool runButtonAction(const uint8_t action) {
+  switch (action) {
+    case CrossPointSettings::BTN_ACT_NONE:
+      return false;
+    case CrossPointSettings::BTN_ACT_PAGE_NEXT:
+      MappedInputManager::requestPageNext();
+      return false;  // the reader consumes it in its own loop()
+    case CrossPointSettings::BTN_ACT_PAGE_PREV:
+      MappedInputManager::requestPagePrev();
+      return false;
+    case CrossPointSettings::BTN_ACT_BACK:
+      MappedInputManager::requestBackAction();
+      return false;
+    case CrossPointSettings::BTN_ACT_HOME:
+      MappedInputManager::requestHomeAction();
+      return false;
+    case CrossPointSettings::BTN_ACT_READER_MENU:
+      MappedInputManager::requestMenuAction();
+      return false;
+    case CrossPointSettings::BTN_ACT_CONTROL_CENTER:
+      MappedInputManager::requestControlCenterAction();
+      return false;
+    case CrossPointSettings::BTN_ACT_NIGHT_MODE:
+      SETTINGS.screenInverted = SETTINGS.screenInverted ? 0 : 1;
+      SETTINGS.saveToFile();
+      // Night mode flips the panel's output polarity, so the whole frame is new
+      // content: force the clean waveform rather than a differential update.
+      activityManager.handleForcedRefresh();
+      activityManager.requestUpdate();
+      return true;
+    case CrossPointSettings::BTN_ACT_REFRESH:
+      if (!activityManager.handleForcedRefresh()) {
+        RenderLock lock;
+        renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+      }
+      return true;
+    case CrossPointSettings::BTN_ACT_FRONTLIGHT: {
+      if (!Frontlight.present()) return true;
+      const bool lightOn = !Frontlight.isOn();
+      Frontlight.setOn(lightOn);
+      SETTINGS.frontlightOn = lightOn ? 1 : 0;
+      SETTINGS.saveToFile();
+      LOG_INF("LIGHT", "Frontlight toggled %s by button action", lightOn ? "on" : "off");
+      return true;
+    }
+    case CrossPointSettings::BTN_ACT_TOUCH_TOGGLE: {
+      const bool enabled = !gpio.touchEnabled();
+      gpio.setTouchEnabled(enabled);
+      LOG_INF("MAIN", "Touch input %s by button action", enabled ? "enabled" : "disabled");
+      showActionToast(enabled ? tr(STR_TOUCH_ENABLED) : tr(STR_TOUCH_DISABLED));
+      return true;
+    }
+    case CrossPointSettings::BTN_ACT_SLEEP:
+      if (millis() < allowSleepAt) return true;
+      enterDeepSleep();
+      return true;
+    default:
+      return false;
+  }
+}
+
+// Raw edge tracking for one configurable button: fires the hold action once the
+// hold threshold passes (while still down, like a phone's long press) and the
+// tap action on a release that never reached the threshold.
+struct ConfigurableButton {
+  unsigned long pressedAt = 0;
+  bool down = false;
+  bool longFired = false;
+};
+
+static constexpr unsigned long BUTTON_LONG_PRESS_MS = 600;
+
+static bool serviceConfigurableButton(ConfigurableButton& state, const bool isDown, const bool releaseEdge,
+                                      const uint8_t shortAction, const uint8_t longAction) {
+  if (isDown && !state.down) {
+    state.down = true;
+    state.longFired = false;
+    state.pressedAt = millis();
+  }
+  if (state.down && !state.longFired && isDown && millis() - state.pressedAt >= BUTTON_LONG_PRESS_MS) {
+    state.longFired = true;
+    return runButtonAction(longAction) || true;  // the hold owns the frame either way
+  }
+  if (releaseEdge || (state.down && !isDown)) {
+    const bool wasLong = state.longFired;
+    state.down = false;
+    state.longFired = false;
+    if (wasLong) return true;  // the hold already acted; the lift is not a tap
+    return runButtonAction(shortAction);
+  }
+  return false;
+}
+
+static bool dispatchConfigurableButtons() {
+  bool consumed = false;
+
+  // Capacitive Home key: the SDK already classifies tap vs hold for it.
+  if (gpio.hasHomeKey()) {
+    if (gpio.wasHomeKeyLongPressed()) {
+      consumed = runButtonAction(SETTINGS.homeKeyLongAction) || consumed;
+    } else if (gpio.wasHomeKeyTapped()) {
+      // Back and Home already reach their consumers through the mapped-input
+      // paths (wasReleased(Back) / wasHomeGesture), which know the activity
+      // stack; re-raising them here would double-fire.
+      if (SETTINGS.homeKeyShortAction != CrossPointSettings::BTN_ACT_BACK &&
+          SETTINGS.homeKeyShortAction != CrossPointSettings::BTN_ACT_HOME) {
+        consumed = runButtonAction(SETTINGS.homeKeyShortAction) || consumed;
+      }
+    }
+  }
+
+#if FREEINK_DEVICE_LILYGO
+  // The expander user button reaches InputManager as BTN_DOWN (board hook); it
+  // is masked out of the normal queries so only this dispatcher sees it.
+  static ConfigurableButton userBtn;
+  consumed =
+      serviceConfigurableButton(userBtn, gpio.rawIsPressed(HalGPIO::BTN_DOWN), gpio.rawWasReleased(HalGPIO::BTN_DOWN),
+                                SETTINGS.userBtnShortAction, SETTINGS.userBtnLongAction) ||
+      consumed;
+#endif
+
+  return consumed;
+}
+
 void setupDisplayAndFonts(bool seamless = false) {
 #if !FREEINK_MCU_C3
   // C3 resolves its controller in HalGPIO::begin() before SPI claims the
@@ -422,6 +578,13 @@ void setup() {
   silentRebootTarget = 0;
 
   gpio.begin();
+#if FREEINK_DEVICE_LILYGO
+  // The expander user button (IO48) arrives as BTN_DOWN from the board hook.
+  // Hide it from the normal button queries so it cannot scroll lists behind the
+  // user's back: dispatchConfigurableButtons() owns it and turns its tap/hold
+  // into the configured actions. Serial-injected DOWN still works (debugging).
+  gpio.setMaskedButtons(1u << HalGPIO::BTN_DOWN);
+#endif
   powerManager.begin();
   halTiltSensor.begin();
   halClock.begin();
@@ -627,6 +790,9 @@ void loop() {
   static unsigned long lastMemPrint = 0;
 
   gpio.setSharedConfirmPowerShortPressEmitsPower(SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP);
+  // Button-action requests live for one input frame: cleared here, raised by
+  // dispatchConfigurableButtons() below, consumed by the activity's loop().
+  MappedInputManager::clearFrameActionRequests();
   gpio.update();
   halTiltSensor.update(SETTINGS.tiltPageTurn, SETTINGS.orientation, activityManager.isReaderActivity());
 
@@ -679,13 +845,20 @@ void loop() {
           name = name.substring(0, colon);
         }
         int idx = -1;
-        if (name == "BACK") idx = HalGPIO::BTN_BACK;
-        else if (name == "CONFIRM") idx = HalGPIO::BTN_CONFIRM;
-        else if (name == "LEFT") idx = HalGPIO::BTN_LEFT;
-        else if (name == "RIGHT") idx = HalGPIO::BTN_RIGHT;
-        else if (name == "UP") idx = HalGPIO::BTN_UP;
-        else if (name == "DOWN") idx = HalGPIO::BTN_DOWN;
-        else if (name == "POWER") idx = HalGPIO::BTN_POWER;
+        if (name == "BACK")
+          idx = HalGPIO::BTN_BACK;
+        else if (name == "CONFIRM")
+          idx = HalGPIO::BTN_CONFIRM;
+        else if (name == "LEFT")
+          idx = HalGPIO::BTN_LEFT;
+        else if (name == "RIGHT")
+          idx = HalGPIO::BTN_RIGHT;
+        else if (name == "UP")
+          idx = HalGPIO::BTN_UP;
+        else if (name == "DOWN")
+          idx = HalGPIO::BTN_DOWN;
+        else if (name == "POWER")
+          idx = HalGPIO::BTN_POWER;
         if (idx >= 0) {
           gpio.injectButton(static_cast<uint8_t>(idx), holdMs);
           logSerial.printf("KEY_OK:%s:%lu\n", name.c_str(), holdMs);
@@ -781,7 +954,9 @@ void loop() {
 
   static bool screenshotButtonsReleased = true;
   static bool screenshotComboActive = false;
-  if (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.isPressed(HalGPIO::BTN_DOWN)) {
+  // raw: the user button is masked out of the normal queries (it drives
+  // configurable actions), but the screenshot chord still wants its real state.
+  if (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.rawIsPressed(HalGPIO::BTN_DOWN)) {
     screenshotComboActive = true;
     if (screenshotButtonsReleased) {
       screenshotButtonsReleased = false;
@@ -809,18 +984,10 @@ void loop() {
     return;
   }
 
-  // Capacitive home-key tap bound to a global action. Back and Home run
-  // through MappedInputManager (button mapping / wasHomeGesture) instead.
-  if (mappedInputManager.wasHomeKeyAction(CrossPointSettings::HOME_KEY_LIGHT)) {
-    const bool lightOn = !Frontlight.isOn();
-    Frontlight.setOn(lightOn);
-    SETTINGS.frontlightOn = lightOn ? 1 : 0;
-    SETTINGS.saveToFile();
-    LOG_INF("LIGHT", "Frontlight toggled %s by home key", lightOn ? "on" : "off");
-    return;
-  }
-  if (millis() >= allowSleepAt && mappedInputManager.wasHomeKeyAction(CrossPointSettings::HOME_KEY_SLEEP)) {
-    enterDeepSleep();
+  // Configurable buttons: the capacitive Home key and the board's user button
+  // (IO48 on the LilyGo T5S3, behind the PCA9535 expander) each run a
+  // user-chosen action on tap and on hold.
+  if (dispatchConfigurableButtons()) {
     return;
   }
 
@@ -851,14 +1018,24 @@ void loop() {
   static bool powerReleasedSinceWake = false;
   if (!gpio.isPressed(HalGPIO::BTN_POWER) && !gpio.isPowerButtonPhysicallyPressed()) powerReleasedSinceWake = true;
 
+  // BOOT/power hold runs its configured action (Sleep by default). The latch
+  // keeps a continued hold from repeating it, and makes the eventual release
+  // skip the short action so one press never runs both.
+  static bool powerLongFired = false;
+  if (powerLongFired) {
+    if (!gpio.isPressed(HalGPIO::BTN_POWER) && !gpio.isPowerButtonPhysicallyPressed()) powerLongFired = false;
+    return;
+  }
   if (powerReleasedSinceWake && millis() >= allowSleepAt && gpio.isPowerButtonPhysicallyPressed() &&
       gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getPowerButtonHeldTime() > SETTINGS.getPowerButtonDuration()) {
-    // If the screenshot combination is potentially being pressed, don't sleep
-    if (gpio.isPressed(HalGPIO::BTN_DOWN)) {
+    // If the screenshot combination is potentially being pressed, don't act
+    if (gpio.rawIsPressed(HalGPIO::BTN_DOWN)) {
       return;
     }
-    enterDeepSleep();
-    // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
+    powerLongFired = true;
+    runButtonAction(SETTINGS.pwrBtnLongAction);
+    return;
+    // With the default Sleep action this is unreachable — enterDeepSleep()
     return;
   }
 

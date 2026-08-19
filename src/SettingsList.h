@@ -179,6 +179,16 @@ inline SettingInfo buildDictionarySetting(const std::vector<DictionaryEntry>& di
   return s;
 }
 
+// Labels for CrossPointSettings::BUTTON_ACTION, in enum order. Every
+// configurable key (BOOT hold, the IO48 user button, the capacitive Home key)
+// picks from this one list, so a new action is added in exactly two places:
+// the enum and here.
+inline std::vector<StrId> buttonActionValues() {
+  return {StrId::STR_ACTION_NONE,   StrId::STR_PAGE_NEXT,   StrId::STR_PAGE_PREV,      StrId::STR_ACTION_BACK,
+          StrId::STR_ACTION_HOME,   StrId::STR_READER_MENU, StrId::STR_CONTROL_CENTER, StrId::STR_NIGHT_MODE,
+          StrId::STR_FORCE_REFRESH, StrId::STR_FRONTLIGHT,  StrId::STR_TOUCH_TOGGLE,   StrId::STR_SLEEP};
+}
+
 inline std::vector<StrId> buildLongPressMenuValues() {
   static constexpr StrId VALUES[] = {StrId::STR_KOSYNC, StrId::STR_DISABLED, StrId::STR_BOOKMARK_OPTION,
                                      StrId::STR_DICTIONARY, StrId::STR_READER_MENU};
@@ -383,22 +393,34 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                           "longPressButtonBehavior", StrId::STR_CAT_CONTROLS),
         SettingInfo::Enum(StrId::STR_LONG_PRESS_MENU, &CrossPointSettings::longPressMenuFunction,
                           buildLongPressMenuValues(), "longPressMenuFunction", StrId::STR_CAT_CONTROLS),
-        // Capacitive home-key tap action (filtered out below on keyless boards).
-        // Order must match CrossPointSettings::HOME_KEY_FUNCTION.
-        SettingInfo::Enum(StrId::STR_HOME_KEY_FUNCTION, &CrossPointSettings::homeKeyFunction,
-                          {StrId::STR_ACTION_BACK, StrId::STR_ACTION_HOME, StrId::STR_FRONTLIGHT, StrId::STR_SLEEP},
-                          "homeKeyFunction", StrId::STR_CAT_CONTROLS),
+        // --- Configurable keys. Tap and hold are separate settings drawing on
+        // the shared BUTTON_ACTION list; the Home-key and user-button rows are
+        // filtered out below on boards that lack those keys. Order must match
+        // CrossPointSettings::BUTTON_ACTION.
+        SettingInfo::Enum(StrId::STR_HOME_KEY_TAP, &CrossPointSettings::homeKeyShortAction, buttonActionValues(),
+                          "homeKeyShortAction", StrId::STR_CAT_CONTROLS),
+        SettingInfo::Enum(StrId::STR_HOME_KEY_HOLD, &CrossPointSettings::homeKeyLongAction, buttonActionValues(),
+                          "homeKeyLongAction", StrId::STR_CAT_CONTROLS),
+        SettingInfo::Enum(StrId::STR_USER_BTN_TAP, &CrossPointSettings::userBtnShortAction, buttonActionValues(),
+                          "userBtnShortAction", StrId::STR_CAT_CONTROLS),
+        SettingInfo::Enum(StrId::STR_USER_BTN_HOLD, &CrossPointSettings::userBtnLongAction, buttonActionValues(),
+                          "userBtnLongAction", StrId::STR_CAT_CONTROLS),
+    // BOOT tap keeps its own option list: Confirm/Footnotes are power-button
+    // specific, and the stored indices are load-bearing (SHORT_PWRBTN).
+    // Tap sits before hold, matching the other key pairs above.
 #if FREEINK_CAP_TOUCH
         SettingInfo::Enum(StrId::STR_SHORT_PWR_BTN, &CrossPointSettings::shortPwrBtn,
-                          {StrId::STR_IGNORE, StrId::STR_SLEEP, StrId::STR_PAGE_TURN, StrId::STR_FORCE_REFRESH,
-                           StrId::STR_FOOTNOTES, StrId::STR_CONFIRM},
+                          {StrId::STR_IGNORE, StrId::STR_SLEEP, StrId::STR_PAGE_NEXT, StrId::STR_FORCE_REFRESH,
+                           StrId::STR_FOOTNOTES, StrId::STR_CONFIRM, StrId::STR_PAGE_PREV},
                           "shortPwrBtn", StrId::STR_CAT_CONTROLS),
 #else
-        SettingInfo::Enum(
-            StrId::STR_SHORT_PWR_BTN, &CrossPointSettings::shortPwrBtn,
-            {StrId::STR_IGNORE, StrId::STR_SLEEP, StrId::STR_PAGE_TURN, StrId::STR_FORCE_REFRESH, StrId::STR_FOOTNOTES},
-            "shortPwrBtn", StrId::STR_CAT_CONTROLS),
+        SettingInfo::Enum(StrId::STR_SHORT_PWR_BTN, &CrossPointSettings::shortPwrBtn,
+                          {StrId::STR_IGNORE, StrId::STR_SLEEP, StrId::STR_PAGE_NEXT, StrId::STR_FORCE_REFRESH,
+                           StrId::STR_FOOTNOTES, StrId::STR_DISABLED, StrId::STR_PAGE_PREV},
+                          "shortPwrBtn", StrId::STR_CAT_CONTROLS),
 #endif
+        SettingInfo::Enum(StrId::STR_PWR_BTN_HOLD, &CrossPointSettings::pwrBtnLongAction, buttonActionValues(),
+                          "pwrBtnLongAction", StrId::STR_CAT_CONTROLS),
         SettingInfo::Toggle(StrId::STR_PWR_BTN_FOOTNOTE_BACK, &CrossPointSettings::pwrBtnFootnoteBack,
                             "pwrBtnFootnoteBack", StrId::STR_CAT_CONTROLS),
         SettingInfo::Toggle(StrId::STR_BACK_SHORT_TO_FILE_BROWSER, &CrossPointSettings::backShortToFileBrowser,
@@ -541,10 +563,26 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
   if (!BoardConfig::hasHomeKey()) {
     v.erase(std::remove_if(v.begin(), v.end(),
                            [](const SettingInfo& s) {
-                             return s.nameId == StrId::STR_TAP_FOR_READER_MENU ||
-                                    s.nameId == StrId::STR_HOME_KEY_FUNCTION;
+                             return s.nameId == StrId::STR_TAP_FOR_READER_MENU || s.nameId == StrId::STR_HOME_KEY_TAP ||
+                                    s.nameId == StrId::STR_HOME_KEY_HOLD;
                            }),
             v.end());
+  }
+#if !FREEINK_DEVICE_LILYGO
+  // The configurable user button is the LilyGo T5S3's expander key (IO48); no
+  // other supported board routes a key through that dispatcher.
+  v.erase(std::remove_if(v.begin(), v.end(),
+                         [](const SettingInfo& s) {
+                           return s.nameId == StrId::STR_USER_BTN_TAP || s.nameId == StrId::STR_USER_BTN_HOLD;
+                         }),
+          v.end());
+#endif
+  // "Long-press Menu" is the front Confirm button's hold action; the Home key's
+  // hold has its own row. Boards with no Confirm button never show it.
+  if (BoardConfig::ACTIVE.input.confirm < 0) {
+    v.erase(
+        std::remove_if(v.begin(), v.end(), [](const SettingInfo& s) { return s.nameId == StrId::STR_LONG_PRESS_MENU; }),
+        v.end());
   }
   if (BoardConfig::hasTouch()) {
     v.erase(std::remove_if(v.begin(), v.end(),

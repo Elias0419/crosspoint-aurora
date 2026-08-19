@@ -25,14 +25,15 @@
 #include "fontIds.h"
 
 namespace {
-constexpr int kStatusY = 12;       // Status bar text baseline (top of cell)
-constexpr int kDividerGap = 32;    // Distance from status text to the divider line
-                                   // (sized for the large UI_12 page title)
-constexpr int kThumbHeight = 225;  // Featured cover thumbnail height (large, Lyra-style)
-constexpr int kThumbWidth = 150;   // Featured cover thumbnail width (~2:3)
-constexpr int kTextGap = 16;       // Gap between thumbnail and title block
-constexpr int kIconSize = 32;      // Placeholder cover glyph / bottom-bar icon size
-constexpr int kSectionGap = 28;    // Gap above the "Library" header
+constexpr int kStatusY = 12;          // Status bar text baseline (top of cell)
+constexpr int kDividerGap = 32;       // Distance from status text to the divider line
+                                      // (sized for the large UI_12 page title)
+constexpr int kTitleClockGap = 12;    // Minimum air between the page title and the centered clock
+constexpr int kThumbHeight = 225;     // Featured cover thumbnail height (large, Lyra-style)
+constexpr int kThumbWidth = 150;      // Featured cover thumbnail width (~2:3)
+constexpr int kTextGap = 16;          // Gap between thumbnail and title block
+constexpr int kIconSize = 32;         // Placeholder cover glyph / bottom-bar icon size
+constexpr int kSectionGap = 28;       // Gap above the "Library" header
 constexpr int kBottomBarHeight = 84;  // reserved strip: floating dock + gaps
 
 // iOS-style dock geometry inside the reserved bottom strip. HomeTabBar::hitTest
@@ -68,12 +69,12 @@ constexpr int kSectionFontId = UI_12_FONT_ID;
 // (~48px ≈ 5mm at the T5S3's 234 PPI), not for button-driven selection.
 constexpr int kReaderTopBarH = 60;
 constexpr int kReaderBottomBarH = 208;
-constexpr int kScrubBtn = 52;         // prev/next chapter buttons (square)
-constexpr int kScrubRowY = 16;        // scrub row offset inside the bottom bar
-constexpr int kMetaRowY = 84;         // meta divider offset inside the bottom bar
-constexpr int kToolRowY = 116;        // tool row divider offset inside the bottom bar
-constexpr int kPanelRowH = 56;        // panel (Contents/Text/More) row height
-constexpr int kPanelToolRowH = 78;    // panel-bottom tool switcher (glyph + label)
+constexpr int kScrubBtn = 52;       // prev/next chapter buttons (square)
+constexpr int kScrubRowY = 16;      // scrub row offset inside the bottom bar
+constexpr int kMetaRowY = 84;       // meta divider offset inside the bottom bar
+constexpr int kToolRowY = 116;      // tool row divider offset inside the bottom bar
+constexpr int kPanelRowH = 56;      // panel (Contents/Text/More) row height
+constexpr int kPanelToolRowH = 78;  // panel-bottom tool switcher (glyph + label)
 
 // Resolve a UIIcon to its 32px bitmap (mirrors LyraTheme's iconForName for the
 // icons the bottom bar uses; keeps Aurora self-contained).
@@ -102,21 +103,30 @@ int AuroraTheme::drawHeaderBar(const GfxRenderer& renderer, int x, int top, int 
   const int P = metrics.contentSidePadding;
   const int textY = top + kStatusY;
 
-  // Title (left, large + bold), truncated so a long name (e.g. a folder path) can't
-  // run into the battery on the right.
+  // Clock (center, hh:mm) on any board whose RTC came up (X3, T5S3's PCF8563).
+  // Laid out BEFORE the title so the title can be truncated clear of it: a long
+  // page name (a folder path, a book title) used to run straight through the
+  // centered clock.
+  char timeBuf[9] = {0};
+  int clockW = 0;
+  if (SETTINGS.statusBarClock && halClock.isAvailable() &&
+      halClock.formatTime(timeBuf, sizeof(timeBuf), SETTINGS.clockUtcOffsetQ, SETTINGS.clockFormat == 1)) {
+    clockW = renderer.getTextWidth(kCaptionFontId, timeBuf);
+  }
+  const int clockX = x + (width - clockW) / 2;
+
+  // Title (left, large + bold), truncated so a long name can't run into the
+  // clock (when shown) or the battery on the right.
   if (title != nullptr) {
     const int rightReserve = P + metrics.batteryWidth + 52;  // battery icon + "NN%"
-    const int maxW = std::max(20, (x + width - rightReserve) - (x + P));
+    const int titleLimit = clockW > 0 ? clockX - kTitleClockGap : x + width - rightReserve;
+    const int maxW = std::max(20, titleLimit - (x + P));
     const auto t = renderer.truncatedText(kTitleFontId, title, maxW, EpdFontFamily::BOLD);
     renderer.drawText(kTitleFontId, x + P, textY, t.c_str(), true, EpdFontFamily::BOLD);
   }
 
-  // Clock (center, hh:mm) on any board whose RTC came up (X3, T5S3's PCF8563).
-  if (SETTINGS.statusBarClock && halClock.isAvailable()) {
-    char timeBuf[9];
-    if (halClock.formatTime(timeBuf, sizeof(timeBuf), SETTINGS.clockUtcOffsetQ, SETTINGS.clockFormat == 1)) {
-      renderer.drawCenteredText(kCaptionFontId, textY, timeBuf);
-    }
+  if (clockW > 0) {
+    renderer.drawText(kCaptionFontId, clockX, textY, timeBuf, true);
   }
 
   // Battery (right).
@@ -166,8 +176,19 @@ void AuroraTheme::drawHomeScreen(GfxRenderer& renderer, Rect content, const std:
       HalFile file;
       if (Storage.openFileForRead("HOME", coverBmpPath, file)) {
         Bitmap bitmap(file);
-        if (bitmap.parseHeaders() == BmpReaderError::Ok) {
-          renderer.drawBitmap(bitmap, x, y, w, h);
+        if (bitmap.parseHeaders() == BmpReaderError::Ok && bitmap.getWidth() > 0 && bitmap.getHeight() > 0) {
+          // Covers rarely match the frame's aspect exactly and drawBitmap anchors
+          // top-left (down-fit only, never upscales), which left the image hugging
+          // the frame's left edge with a white gutter. Mirror its fit math, center
+          // the drawn area in the reserved rect, and hug the border to the image.
+          const float scale = std::min(
+              1.0f, std::min(static_cast<float>(w) / bitmap.getWidth(), static_cast<float>(h) / bitmap.getHeight()));
+          const int dw = std::max(1, static_cast<int>(bitmap.getWidth() * scale));
+          const int dh = std::max(1, static_cast<int>(bitmap.getHeight() * scale));
+          const int dx = x + (w - dw) / 2;
+          const int dy = y + (h - dh) / 2;
+          renderer.drawBitmap(bitmap, dx, dy, w, h);
+          renderer.drawRect(dx, dy, dw, dh);
           drew = true;
         }
         file.close();
@@ -177,8 +198,8 @@ void AuroraTheme::drawHomeScreen(GfxRenderer& renderer, Rect content, const std:
       renderer.fillRect(x, y, w, h, true);
       const int ic = std::min(kIconSize, std::min(w, h) - 6);
       if (ic > 0) renderer.drawIcon(CoverIcon, x + (w - ic) / 2, y + (h - ic) / 2, ic);
+      renderer.drawRect(x, y, w, h);
     }
-    renderer.drawRect(x, y, w, h);
   };
 
   // Crisp e-ink progress bar: a 1px outlined track with a solid-black fill for the read
@@ -884,7 +905,6 @@ void AuroraTheme::drawReaderToolbar(GfxRenderer& renderer, Rect screen, const Re
   }
 }
 
-
 void AuroraTheme::drawReaderPanel(GfxRenderer& renderer, Rect screen, const char* title, int itemCount,
                                   int selectedIndex, const std::function<std::string(int)>& rowText,
                                   const std::function<std::string(int)>& rowValue, int activeTool) const {
@@ -929,8 +949,7 @@ void AuroraTheme::drawReaderPanel(GfxRenderer& renderer, Rect screen, const char
       renderer.drawRoundedRect(X + P - 6, rowY + 2, W - 2 * (P - 6), kPanelRowH - 4, 2, 12, true);
     }
     std::string value = rowValue ? rowValue(i) : std::string();
-    const int valueW =
-        value.empty() ? 0 : renderer.getTextWidth(kBodyFontId, value.c_str(), EpdFontFamily::BOLD);
+    const int valueW = value.empty() ? 0 : renderer.getTextWidth(kBodyFontId, value.c_str(), EpdFontFamily::BOLD);
     const int nameMaxW = W - 2 * P - (valueW > 0 ? valueW + 16 : 0);
     const auto name = renderer.truncatedText(kBodyFontId, rowText(i).c_str(), nameMaxW);
     renderer.drawText(kBodyFontId, X + P, rowY + textDy, name.c_str());
@@ -980,8 +999,7 @@ HomeHitLayout AuroraTheme::homeHitLayout(const GfxRenderer& renderer) const {
   // Mirrors drawHomeScreen: same constants, same content rect HomeActivity
   // passes it ({0, 0, W, pageH - hintRow}).
   const auto& metrics = UITheme::getInstance().getMetrics();
-  const int contentH =
-      renderer.getScreenHeight() - (SETTINGS.showFrontButtonHints() ? metrics.buttonHintsHeight : 0);
+  const int contentH = renderer.getScreenHeight() - (SETTINGS.showFrontButtonHints() ? metrics.buttonHintsHeight : 0);
   HomeHitLayout hit;
   const int dividerY = kStatusY + kDividerGap;
   const int thumbY = dividerY + 12;

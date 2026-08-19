@@ -3,6 +3,7 @@
 #include <FreeInkUIIcon.h>
 #include <GfxRenderer.h>
 #include <HalFrontlight.h>
+#include <HalGPIO.h>
 #include <I18n.h>
 
 #include <cstdio>
@@ -13,6 +14,7 @@
 #include "components/UIThemeTokens.h"
 #include "components/icons/customListIcons.h"
 #include "components/icons/listIcons.h"
+#include "util/ScreenshotUtil.h"
 
 namespace fui = freeink::ui;
 
@@ -24,9 +26,17 @@ constexpr fui::ActionId ACTION_BRIGHTNESS_STEP = 4;
 constexpr fui::ActionId ACTION_WARMTH_STEP = 5;
 constexpr fui::ActionId ACTION_TILE = 6;  // value = tile index
 
-// Quick-setting tiles (2 columns). Keep computePanelBottom in sync.
-constexpr int kTileRows = 2;
-constexpr int16_t kTileHeight = 64;
+// iOS-style geometry. The panel is a card hanging from the top of the screen:
+// a grabber, full-width slider pills, then a 2-column tile grid.
+constexpr int16_t kPanelSideMargin = 16;
+constexpr int16_t kGrabberWidth = 72;
+constexpr int16_t kGrabberHeight = 5;
+constexpr int16_t kSliderRowHeight = 56;  // the pill itself (finger-sized)
+constexpr int16_t kSliderTrackRadius = 26;
+constexpr int16_t kTileHeight = 84;
+constexpr int16_t kTileRadius = 18;
+constexpr int16_t kTileGap = 12;
+constexpr int kTileCols = 2;
 constexpr int BUTTON_BRIGHTNESS_STEP = 5;
 constexpr int FINE_STEP = 1;
 
@@ -35,6 +45,25 @@ uint8_t percentFromPermille(const int16_t permille) {
   if (value < 0) value = 0;
   if (value > 100) value = 100;
   return static_cast<uint8_t>(value);
+}
+
+// 1-bit tile styling: an outlined card, filled solid black when the setting it
+// carries is on (the "checked" state), never a dithered gray.
+fui::StyleSet tileStyles() {
+  fui::StyleSet s;
+  s.explicitlySet = true;
+  s.normal.background = fui::Paint::solid(fui::Color::White);
+  s.normal.foreground = fui::Paint::solid(fui::Color::Black);
+  s.normal.border = fui::Paint::solid(fui::Color::Black);
+  s.normal.borderWidth = 2;
+  s.normal.radius = kTileRadius;
+  s.selected = s.normal;
+  s.selected.background = fui::Paint::solid(fui::Color::Black);
+  s.selected.foreground = fui::Paint::solid(fui::Color::White);
+  s.focused = s.selected;
+  s.active = s.selected;
+  s.disabled = s.normal;
+  return s;
 }
 }  // namespace
 
@@ -117,9 +146,12 @@ void FrontlightPanelActivity::onTileEvent(const fui::ActionEvent& event, void* u
 
 void FrontlightPanelActivity::runTile(const int idx) {
   switch (idx) {
-    case 0:  // Night mode (reader colors inverted)
+    case 0:  // Night mode (inverted output polarity, applied to the whole UI)
       SETTINGS.screenInverted = SETTINGS.screenInverted ? 0 : 1;
       SETTINGS.saveToFile();
+      // Inversion rewrites every pixel; take the clean waveform so the panel
+      // does not keep a ghost of the old polarity.
+      cleanRefreshPending = true;
       requestUpdate();
       break;
     case 1:  // Ghost-cleanup refresh of the whole frame
@@ -131,7 +163,15 @@ void FrontlightPanelActivity::runTile(const int idx) {
       SETTINGS.saveToFile();
       requestUpdate();
       break;
-    case 3:  // Sleep now
+    case 3:  // Touch kill-switch (for reading with the palm on the glass)
+      gpio.setTouchEnabled(!gpio.touchEnabled());
+      requestUpdate();
+      break;
+    case 4:  // Screenshot of whatever is behind the panel
+      screenshotPending = true;
+      close();
+      break;
+    case 5:  // Sleep now
       SETTINGS.saveToFile();
       enterDeepSleep(false);
       break;
@@ -213,19 +253,19 @@ void FrontlightPanelActivity::loop() {
 }
 
 int FrontlightPanelActivity::computePanelBottom() const {
-  const auto& metrics = UITheme::getInstance().getMetrics();
   const auto tokens = uiThemeTokens(uiTarget);
-  const int16_t lineHeight = uiTarget.lineHeight(tokens.bodyText.font);
-  int y = metrics.topPadding + metrics.headerHeight;
-  y += tokens.spaceLg;
+  const int16_t lineHeight = uiTarget.lineHeight(tokens.smallText.font);
+  int y = tokens.spaceLg;                // top padding above the grabber
+  y += kGrabberHeight + tokens.spaceLg;  // grabber + air
   if (Frontlight.present()) {
-    y += tokens.rowHeight + tokens.spaceSm;
-    y += tokens.rowHeight + tokens.spaceLg;
+    y += lineHeight + tokens.spaceXs + kSliderRowHeight + tokens.spaceMd;  // brightness
     if (Frontlight.hasColorTemperature()) {
-      y += lineHeight + tokens.spaceSm + tokens.rowHeight + tokens.spaceLg;
+      y += lineHeight + tokens.spaceXs + kSliderRowHeight + tokens.spaceMd;  // warmth
     }
+    y += tokens.spaceSm;
   }
-  y += kTileRows * (kTileHeight + tokens.spaceMd);
+  const int rows = (kTileCount + kTileCols - 1) / kTileCols;
+  y += rows * kTileHeight + (rows - 1) * kTileGap;
   y += tokens.spaceLg;
   return y;
 }
@@ -234,72 +274,127 @@ void FrontlightPanelActivity::panelScreen(UiScreen& screen, void* user) {
   static_cast<FrontlightPanelActivity*>(user)->buildPanelScreen(screen);
 }
 
+void FrontlightPanelActivity::addSliderRow(UiScreen& screen, const char* label, const uint8_t value,
+                                           const fui::ActionId sliderAction, const fui::ActionId stepAction,
+                                           const bool showToggle) {
+  const auto& theme = screen.theme();
+  const fui::Insets side{0, kPanelSideMargin, 0, kPanelSideMargin};
+  const int16_t lineHeight = screen.target().lineHeight(theme.smallText.font);
+
+  // Caption line: name on the left, live percentage on the right.
+  const fui::Rect caption = screen.takeTop(lineHeight, theme.spaceXs).inset(side);
+  fui::TextStyle nameStyle = theme.smallText;
+  nameStyle.bold = true;
+  screen.target().text(caption, label, nameStyle);
+  char pct[8];
+  snprintf(pct, sizeof(pct), "%u%%", static_cast<unsigned>(value));
+  fui::TextStyle pctStyle = theme.smallText;
+  pctStyle.align = fui::TextAlign::Right;
+  screen.target().text(caption, pct, pctStyle);
+
+  // The pill. An on/off sun control rides at its right end on the brightness
+  // row, so the light can be killed without dragging to zero.
+  fui::Rect row = screen.takeTop(kSliderRowHeight, theme.spaceMd).inset(side);
+  if (showToggle) {
+    const fui::BitmapRef sunIcon = fui::bitmapFromIcon(lightOn ? icon_sun_filled_32 : icon_sun_32);
+    const int16_t iconW = static_cast<int16_t>(sunIcon.width);
+    const int16_t iconH = static_cast<int16_t>(sunIcon.height);
+    const int16_t hit = static_cast<int16_t>(kSliderRowHeight);
+    const fui::Rect toggle{static_cast<int16_t>(row.right() - hit), row.y, hit, hit};
+    screen.frame().hit(toggle, ACTION_TOGGLE);
+    screen.target().stroke(toggle, fui::Paint::solid(fui::Color::Black), 2, kTileRadius);
+    screen.target().bitmap(fui::Rect{static_cast<int16_t>(toggle.x + (hit - iconW) / 2),
+                                     static_cast<int16_t>(toggle.y + (hit - iconH) / 2), iconW, iconH},
+                           sunIcon, fui::BitmapMode::Center);
+    row = fui::Rect{row.x, row.y, static_cast<int16_t>(row.width - hit - theme.spaceMd), row.height};
+  }
+
+  // 1-bit pill: white track, solid black fill for the set portion, and a 2px
+  // outline drawn last so the empty end of the track still reads as a control.
+  fui::SliderProps props;
+  props.value = value;
+  props.max = 100;
+  props.action = sliderAction;
+  props.inputMask = fui::InputTouch | fui::InputDrag;
+  props.track = fui::Paint::solid(fui::Color::White);
+  props.fill = fui::Paint::solid(fui::Color::Black);
+  props.knob = fui::Paint::solid(fui::Color::Black);
+  props.trackHeight = kSliderRowHeight;
+  props.knobWidth = 8;
+  props.knobHeight = kSliderRowHeight;
+  props.radius = kSliderTrackRadius;
+  props.horizontalPadding = 0;
+  fui::slider(screen.frame(), row, props);
+  screen.target().stroke(row, fui::Paint::solid(fui::Color::Black), 2, kSliderTrackRadius);
+
+  // Tap the outer thirds of the pill to step without dragging (the matte glass
+  // makes precise drags hard); the middle stays a drag/jump zone.
+  const int16_t third = static_cast<int16_t>(row.width / 3);
+  screen.frame().hit(fui::Rect{row.x, row.y, third, row.height}, stepAction, -BUTTON_BRIGHTNESS_STEP, fui::InputTouch);
+  screen.frame().hit(fui::Rect{static_cast<int16_t>(row.right() - third), row.y, third, row.height}, stepAction,
+                     BUTTON_BRIGHTNESS_STEP, fui::InputTouch);
+}
+
 void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
-  const auto& metrics = UITheme::getInstance().getMetrics();
   const auto& theme = screen.theme();
   const int16_t bottomInset = static_cast<int16_t>(renderer.getScreenHeight() - panelBottom);
-  screen.setContentMargin(
-      fui::Insets{static_cast<int16_t>(metrics.topPadding + metrics.headerHeight), 0, bottomInset, 0});
-
-  const int16_t lineHeight = screen.target().lineHeight(theme.bodyText.font);
-  const int16_t rowHeight = theme.rowHeight;
-  const fui::Insets sideInset{0, static_cast<int16_t>(theme.spaceLg * 2), 0, static_cast<int16_t>(theme.spaceLg * 2)};
-  char line[48];
+  // No header: the panel is a floating card, and its own grabber says what it
+  // is. (A title band here just repeated the obvious.)
+  screen.setContentMargin(fui::Insets{0, 0, bottomInset, 0});
 
   screen.spacer(theme.spaceLg);
 
-  if (Frontlight.present()) {
-  const fui::Rect headerRow = screen.takeTop(rowHeight, theme.spaceSm).inset(sideInset);
-  snprintf(line, sizeof(line), "%s  %u%%", tr(STR_BRIGHTNESS), static_cast<unsigned>(brightness));
-  const fui::BitmapRef sunIcon = fui::bitmapFromIcon(lightOn ? icon_sun_filled_32 : icon_sun_32);
-  const int16_t iconWidth = static_cast<int16_t>(sunIcon.width);
-  const int16_t iconHeight = static_cast<int16_t>(sunIcon.height);
-  const int16_t controlWidth = static_cast<int16_t>(iconWidth + theme.spaceLg * 2);
-  const fui::Rect sunHit{static_cast<int16_t>(headerRow.right() - controlWidth), headerRow.y, controlWidth, rowHeight};
-  const fui::Rect sunRect{static_cast<int16_t>(sunHit.x + (controlWidth - iconWidth) / 2),
-                          static_cast<int16_t>(headerRow.y + (rowHeight - iconHeight) / 2), iconWidth, iconHeight};
-  const fui::Rect labelRect{headerRow.x, static_cast<int16_t>(headerRow.y + (rowHeight - lineHeight) / 2),
-                            static_cast<int16_t>(headerRow.width - controlWidth - theme.spaceMd), lineHeight};
-  screen.target().text(labelRect, line, theme.bodyText);
-  screen.frame().hit(sunHit, ACTION_TOGGLE);
-  screen.target().bitmap(sunRect, sunIcon, fui::BitmapMode::Center);
-
-  addStepSlider(screen, screen.takeTop(theme.rowHeight, theme.spaceLg).inset(sideInset), brightness, ACTION_BRIGHTNESS,
-                ACTION_BRIGHTNESS_STEP);
-
-  if (Frontlight.hasColorTemperature()) {
-    snprintf(line, sizeof(line), "%s  %u%%", tr(STR_WARMTH), static_cast<unsigned>(warmth));
-    screen.target().text(screen.takeTop(lineHeight, theme.spaceSm).inset(sideInset), line, theme.bodyText);
-    addStepSlider(screen, screen.takeTop(theme.rowHeight, theme.spaceLg).inset(sideInset), warmth, ACTION_WARMTH,
-                  ACTION_WARMTH_STEP);
-  }
-  }  // Frontlight.present()
-
-  // Quick-setting tiles (iOS Control Center style): two columns of themed
-  // buttons. Values show inline so a glance answers "what state is it in".
+  // Grabber: centered rounded bar, the standard "pull-down sheet" affordance.
   {
-    // Night mode shows its state through the checked tile style, not a value
-    // suffix (the combined label doesn't fit half a row).
-    const char* nightLabel = tr(STR_NIGHT_MODE);
+    const fui::Rect band = screen.takeTop(kGrabberHeight, theme.spaceLg);
+    const fui::Rect grabber{static_cast<int16_t>(band.x + (band.width - kGrabberWidth) / 2), band.y, kGrabberWidth,
+                            kGrabberHeight};
+    screen.target().fill(grabber, fui::Paint::solid(fui::Color::Black), kGrabberHeight / 2);
+  }
+
+  if (Frontlight.present()) {
+    addSliderRow(screen, tr(STR_BRIGHTNESS), brightness, ACTION_BRIGHTNESS, ACTION_BRIGHTNESS_STEP,
+                 /*showToggle=*/true);
+    if (Frontlight.hasColorTemperature()) {
+      addSliderRow(screen, tr(STR_WARMTH), warmth, ACTION_WARMTH, ACTION_WARMTH_STEP, /*showToggle=*/false);
+    }
+    screen.spacer(theme.spaceSm);
+  }
+
+  // Quick-setting tiles. Two columns of finger-sized cards; a tile whose
+  // setting is currently on draws filled (StateChecked -> selected style).
+  {
     static constexpr StrId kOrientNames[4] = {StrId::STR_PORTRAIT, StrId::STR_LANDSCAPE_CW,
                                               StrId::STR_ORIENTATION_INVERTED, StrId::STR_LANDSCAPE_CCW};
     char orientLabel[64];
     snprintf(orientLabel, sizeof(orientLabel), "%s: %s", tr(STR_ORIENTATION),
              I18N.get(kOrientNames[SETTINGS.orientation % 4]));
-    const char* labels[4] = {nightLabel, tr(STR_FORCE_REFRESH), orientLabel, tr(STR_SLEEP)};
-    const fui::State states[4] = {SETTINGS.screenInverted ? fui::StateChecked : fui::StateNormal, fui::StateNormal,
-                                  fui::StateNormal, fui::StateNormal};
-    for (int r = 0; r < kTileRows; ++r) {
-      const fui::Rect row = screen.takeTop(kTileHeight, theme.spaceMd).inset(sideInset);
-      const int16_t tileW = static_cast<int16_t>((row.width - theme.spaceMd) / 2);
-      for (int c = 0; c < 2; ++c) {
-        const int idx = r * 2 + c;
-        const fui::Rect tile{static_cast<int16_t>(row.x + c * (tileW + theme.spaceMd)), row.y, tileW, kTileHeight};
+
+    const char* labels[kTileCount] = {tr(STR_NIGHT_MODE),   tr(STR_FORCE_REFRESH),     orientLabel,
+                                      tr(STR_TOUCH_TOGGLE), tr(STR_SCREENSHOT_BUTTON), tr(STR_SLEEP)};
+    const fui::State states[kTileCount] = {
+        SETTINGS.screenInverted ? fui::StateChecked : fui::StateNormal, fui::StateNormal, fui::StateNormal,
+        // "on" here means touch is DISABLED — the filled tile marks the
+        // non-default, attention-worthy state (input is off).
+        gpio.touchEnabled() ? fui::StateNormal : fui::StateChecked, fui::StateNormal, fui::StateNormal};
+
+    const fui::StyleSet styles = tileStyles();
+    const int rows = (kTileCount + kTileCols - 1) / kTileCols;
+    for (int r = 0; r < rows; ++r) {
+      const fui::Rect band = screen.takeTop(kTileHeight, r + 1 < rows ? kTileGap : 0)
+                                 .inset(fui::Insets{0, kPanelSideMargin, 0, kPanelSideMargin});
+      const int16_t tileW = static_cast<int16_t>((band.width - kTileGap * (kTileCols - 1)) / kTileCols);
+      for (int c = 0; c < kTileCols; ++c) {
+        const int idx = r * kTileCols + c;
+        if (idx >= kTileCount) break;
+        const fui::Rect tile{static_cast<int16_t>(band.x + c * (tileW + kTileGap)), band.y, tileW, kTileHeight};
         fui::ButtonProps props;
         props.label = labels[idx];
         props.action = ACTION_TILE;
         props.value = static_cast<int16_t>(idx);
         props.state = states[idx];
+        props.styles = styles;
+        props.text = theme.smallText;
         screen.button(props, tile);
       }
     }
@@ -308,44 +403,26 @@ void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
   screen.spacer(theme.spaceLg);
 }
 
-void FrontlightPanelActivity::addStepSlider(UiScreen& screen, const fui::Rect& row, const uint8_t value,
-                                            const fui::ActionId sliderAction, const fui::ActionId stepAction) {
-  const auto& theme = screen.theme();
-  const int16_t stepWidth = row.height;
-  const fui::Rect minusHit{row.x, row.y, stepWidth, row.height};
-  const fui::Rect plusHit{static_cast<int16_t>(row.right() - stepWidth), row.y, stepWidth, row.height};
-
-  fui::TextStyle glyph = theme.bodyText;
-  glyph.align = fui::TextAlign::Center;
-  const int16_t lineHeight = screen.target().lineHeight(glyph.font);
-  const int16_t glyphY = static_cast<int16_t>(row.y + (row.height - lineHeight) / 2);
-  screen.target().text(fui::Rect{minusHit.x, glyphY, stepWidth, lineHeight}, "-", glyph);
-  screen.target().text(fui::Rect{plusHit.x, glyphY, stepWidth, lineHeight}, "+", glyph);
-  screen.frame().hit(minusHit, stepAction, -1, fui::InputTouch);
-  screen.frame().hit(plusHit, stepAction, 1, fui::InputTouch);
-
-  fui::SliderProps props;
-  props.value = value;
-  props.max = 100;
-  props.action = sliderAction;
-  props.inputMask = fui::InputTouch | fui::InputDrag;
-  const int16_t sideGap = static_cast<int16_t>(stepWidth + theme.spaceSm);
-  fui::slider(screen.frame(), row.inset(fui::Insets{0, sideGap, 0, sideGap}), props);
-}
-
 void FrontlightPanelActivity::render(RenderLock&&) {
+  if (screenshotPending) {
+    // The panel is already closing; capture the screen it uncovered.
+    screenshotPending = false;
+    ScreenshotUtil::takeScreenshot(renderer);
+    return;
+  }
+
   panelBottom = computePanelBottom();
   const int pageWidth = renderer.getScreenWidth();
-  renderer.fillRect(0, 0, pageWidth, panelBottom, false);
 
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_CONTROL_CENTER));
+  // Card: white body, a 2px rule along its bottom edge, rounded bottom corners
+  // so it reads as a sheet pulled down over the page behind it.
+  renderer.fillRect(0, 0, pageWidth, panelBottom, false);
 
   renderUi();
 
   renderer.fillRect(0, panelBottom - 2, pageWidth, 2, true);
-  // The refresh tile re-drives every pixel once with the ghost-cleanup
-  // waveform; ordinary repaints stay on the default fast path.
+  // A tile that rewrote the whole frame (night mode) or explicitly asked for a
+  // cleanup re-drives every pixel once; ordinary repaints stay on the fast path.
   renderer.displayBuffer(cleanRefreshPending ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
   cleanRefreshPending = false;
 }

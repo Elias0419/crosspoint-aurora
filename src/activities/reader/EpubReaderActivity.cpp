@@ -460,35 +460,9 @@ void EpubReaderActivity::loop() {
     }
   }
 
-  // Home-key boards have no front Confirm button, so a Home-key hold runs the
-  // same user-selected long-press action. The SDK emits this event once per
-  // hold and suppresses the short Home tap for the same contact.
-  if (mappedInput.wasHomeKeyHold()) {
-    switch (SETTINGS.longPressMenuFunction) {
-      case CrossPointSettings::LP_MENU_BOOKMARK:
-        if (!showBookmarkMessage) {
-          addBookmark();
-          showBookmarkMessage = true;
-          bookmarkMessageTime = millis();
-          requestUpdate();
-        }
-        return;
-      case CrossPointSettings::LP_MENU_KOSYNC:
-        launchKOReaderSync();
-        return;
-      case CrossPointSettings::LP_MENU_DICTIONARY:
-        if (!showDictionaryMessage) {
-          openDictionaryWordSelect();
-        }
-        return;
-      case CrossPointSettings::LP_MENU_READER_MENU:
-        openReaderMenu();
-        return;
-      case CrossPointSettings::LP_MENU_DISABLED:
-      default:
-        break;
-    }
-  }
+  // The Home key's hold is a configurable button action (Settings → Controls →
+  // "Home Key Hold"), dispatched globally in main.cpp — the reader only sees
+  // its outcome (a menu/page/back request), so there is nothing to do here.
 
   if (handleEndOfBookMenu()) {
     return;

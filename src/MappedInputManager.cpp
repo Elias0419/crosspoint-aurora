@@ -267,7 +267,7 @@ bool MappedInputManager::wasBackGesture() const {
   // The left-edge swipe misfires from reading-page taps near the edge; boards
   // whose capacitive home key is bound to Back use the key instead. The
   // gesture stays as the fallback whenever the key is absent or rebound.
-  if (gpio.hasHomeKey() && SETTINGS.homeKeyFunction == CrossPointSettings::HOME_KEY_BACK) return false;
+  if (gpio.hasHomeKey() && SETTINGS.homeKeyShortAction == CrossPointSettings::BTN_ACT_BACK) return false;
   // Back = left-to-right swipe starting near the left edge. Edge-anchored so that
   // mid-screen horizontal swipes stay available to activities that consume
   // SwipeDir::Left/Right (e.g. percent selection, image viewer).
@@ -278,24 +278,59 @@ bool MappedInputManager::wasTopEdgeDownSwipe() const { return wasEdgeSwipe(fui::
 
 bool MappedInputManager::wasBottomEdgeUpSwipe() const { return wasEdgeSwipe(fui::ScreenEdge::Bottom); }
 
-bool MappedInputManager::wasMenuGesture() const { return wasTopEdgeDownSwipe(); }
+bool MappedInputManager::wasMenuGesture() const {
+  if (menuActionRequested) return true;
+  return wasTopEdgeDownSwipe();
+}
 
-// The capacitive home key's tap action is user-selectable (homeKeyFunction);
-// this reports whether the key fired while bound to the given action.
+// The capacitive home key's tap action is user-selectable (homeKeyShortAction,
+// a BUTTON_ACTION value); this reports whether the key fired while bound to
+// the given action.
 bool MappedInputManager::wasHomeKeyAction(const uint8_t function) const {
-  return gpio.hasHomeKey() && SETTINGS.homeKeyFunction == function && gpio.wasHomeKeyTapped();
+  return gpio.hasHomeKey() && SETTINGS.homeKeyShortAction == function && gpio.wasHomeKeyTapped();
 }
 
 bool MappedInputManager::wasHomeGesture() const {
   // The bottom-edge-up swipe stays a universal Home path on touch boards: the
   // key defaults to Back, and Home must remain reachable without it.
-  if (wasHomeKeyAction(CrossPointSettings::HOME_KEY_HOME)) return true;
+  if (homeActionRequested) return true;
+  if (wasHomeKeyAction(CrossPointSettings::BTN_ACT_HOME)) return true;
   return wasBottomEdgeUpSwipe();
+}
+
+// Frame-scoped action requests, set by main.cpp's configurable-button
+// dispatcher after gpio.update() and cleared at the top of the next loop
+// iteration. They fold synthetic gestures into the existing consumers so a
+// button bound to "Menu đọc"/"Trang chủ"/"Trung tâm điều khiển" behaves
+// exactly like the gesture.
+bool MappedInputManager::menuActionRequested = false;
+bool MappedInputManager::homeActionRequested = false;
+bool MappedInputManager::controlCenterRequested = false;
+bool MappedInputManager::backActionRequested = false;
+bool MappedInputManager::pagePrevRequested_ = false;
+bool MappedInputManager::pageNextRequested_ = false;
+
+void MappedInputManager::requestMenuAction() { menuActionRequested = true; }
+void MappedInputManager::requestHomeAction() { homeActionRequested = true; }
+void MappedInputManager::requestControlCenterAction() { controlCenterRequested = true; }
+void MappedInputManager::requestBackAction() { backActionRequested = true; }
+void MappedInputManager::requestPagePrev() { pagePrevRequested_ = true; }
+void MappedInputManager::requestPageNext() { pageNextRequested_ = true; }
+bool MappedInputManager::pagePrevRequested() { return pagePrevRequested_; }
+bool MappedInputManager::pageNextRequested() { return pageNextRequested_; }
+void MappedInputManager::clearFrameActionRequests() {
+  menuActionRequested = false;
+  homeActionRequested = false;
+  controlCenterRequested = false;
+  backActionRequested = false;
+  pagePrevRequested_ = false;
+  pageNextRequested_ = false;
 }
 
 bool MappedInputManager::wasHomeKeyHold() const { return gpio.hasHomeKey() && gpio.wasHomeKeyLongPressed(); }
 
 bool MappedInputManager::wasLightPanelGesture() const {
+  if (controlCenterRequested) return true;
   // The top-edge swipe opens the control center on every touch board — it
   // holds the quick-setting tiles even when there is no frontlight to dim.
   return wasTopEdgeDownSwipe();
@@ -313,7 +348,7 @@ bool MappedInputManager::wasPowerConfirmClick() const {
 
 bool MappedInputManager::wasPressed(const Button button) const {
   if (button == Button::Back &&
-      (wasBackGesture() || wasHomeKeyAction(CrossPointSettings::HOME_KEY_BACK)))
+      (backActionRequested || wasBackGesture() || wasHomeKeyAction(CrossPointSettings::BTN_ACT_BACK)))
     return true;
 #if FREEINK_CAP_TOUCH
   if (button == Button::Confirm && wasPowerConfirmClick()) return true;
@@ -323,7 +358,7 @@ bool MappedInputManager::wasPressed(const Button button) const {
 
 bool MappedInputManager::wasReleased(const Button button) const {
   if (button == Button::Back &&
-      (wasBackGesture() || wasHomeKeyAction(CrossPointSettings::HOME_KEY_BACK)))
+      (backActionRequested || wasBackGesture() || wasHomeKeyAction(CrossPointSettings::BTN_ACT_BACK)))
     return true;
 #if FREEINK_CAP_TOUCH
   if (button == Button::Confirm && wasPowerConfirmClick()) return true;

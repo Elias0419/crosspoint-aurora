@@ -82,13 +82,25 @@ class MappedInputManager {
   // page turns (reader) can exclude it from a plain SwipeDir::Right.
   bool wasBackGesture() const;
   // True when the capacitive home key tapped while bound to `function` (a
-  // CrossPointSettings::HOME_KEY_FUNCTION value). The key's action is
+  // CrossPointSettings::BUTTON_ACTION value). The key's action is
   // user-selectable; Back is the default.
   bool wasHomeKeyAction(uint8_t function) const;
-  // Home = a home-key tap bound to HOME_KEY_HOME, or the bottom-edge-up swipe
+  // Home = a home-key tap bound to BTN_ACT_HOME, or the bottom-edge-up swipe
   // (kept as the universal Home path on every touch board). The reader menu
   // remains on its existing top-edge gesture and middle tap.
   bool wasHomeGesture() const;
+  // Frame-scoped synthetic gesture requests from the configurable-button
+  // dispatcher (main.cpp): set after gpio.update(), folded into
+  // wasMenuGesture()/wasHomeGesture(), cleared at the top of the next frame.
+  static void requestMenuAction();
+  static void requestHomeAction();
+  static void requestControlCenterAction();
+  static void requestBackAction();
+  static void requestPagePrev();
+  static void requestPageNext();
+  static bool pagePrevRequested();
+  static bool pageNextRequested();
+  static void clearFrameActionRequests();
   // A Home-key hold runs the configured long-press action in the reader.
   bool wasHomeKeyHold() const;
   bool wasMenuGesture() const;
@@ -140,6 +152,13 @@ class MappedInputManager {
   mutable bool touchHeldOverrideValid = false;
   mutable unsigned long touchHeldOverrideMs = 0;
   mutable unsigned long touchHeldOverrideAt = 0;
+  // Frame-scoped synthetic gesture flags (see requestMenuAction/requestHomeAction).
+  static bool menuActionRequested;
+  static bool homeActionRequested;
+  static bool controlCenterRequested;
+  static bool backActionRequested;
+  static bool pagePrevRequested_;
+  static bool pageNextRequested_;
 #if FREEINK_CAP_TOUCH
   bool powerConfirmClickFrame = false;
 #endif

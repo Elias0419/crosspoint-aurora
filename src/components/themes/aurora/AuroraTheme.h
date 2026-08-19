@@ -26,6 +26,10 @@ constexpr ThemeMetrics values = [] {
   // Slim arrow edge-hints (drawSideButtonHints): a narrower strip than the base
   // theme's 30px text boxes, so less of the page is reserved on the right.
   v.sideButtonHintsWidth = 24;
+  // Aurora is a 1-bit look: dithered grays turn to muddy texture on the T5S3's
+  // etched matte glass, so every shared surface (tab pills, popups, sliders)
+  // uses solid black or outlines instead.
+  v.oneBitChrome = true;
   return v;
 }();
 }  // namespace AuroraMetrics
@@ -56,8 +60,7 @@ class AuroraTheme : public BaseTheme {
   void drawReaderToolbar(GfxRenderer& renderer, Rect screen, const ReaderToolbarInfo& info) const override;
   void drawReaderPanel(GfxRenderer& renderer, Rect screen, const char* title, int itemCount, int selectedIndex,
                        const std::function<std::string(int)>& rowText,
-                       const std::function<std::string(int)>& rowValue = nullptr,
-                       int activeTool = -1) const override;
+                       const std::function<std::string(int)>& rowValue = nullptr, int activeTool = -1) const override;
 
   // Tap-target geometry mirroring drawHomeScreen / drawReaderToolbar /
   // drawReaderPanel — keep in sync with those draw functions.

@@ -130,7 +130,10 @@ void UiTabListActivity::buildTabBar(UiScreen& screen) {
   // drawTabBar (slot minus a 4px frame, 8px clearance above the divider) with
   // body-size labels; zero horizontal contentInset disables the tabBar's
   // label-width shrink.
-  const bool tabsFocused = ringPos() == 0;
+  // A 1-bit theme has no dimmed-pill state to fall back to (the dither IS the
+  // dim), so its active tab keeps the solid pill whether the ring is on the tab
+  // band or down in the list — the same segmented-control look either way.
+  const bool tabsFocused = ringPos() == 0 || metrics.oneBitChrome;
   if (metrics.tabPillFullSlot) {
     tabProps.text = screen.theme().bodyText;
     tabProps.tabInset = fui::Insets{4, 4, 7, 4};
@@ -180,7 +183,7 @@ void UiTabListActivity::buildTabBar(UiScreen& screen) {
   const fui::Rect tabRect = screen.takeTop(tabBand);
   // Focused band wash is the Lyra treatment; legacy RoundedRaff keeps the
   // band plain in both states.
-  if (tabsFocused && !metrics.tabPillFullSlot) {
+  if (tabsFocused && !metrics.tabPillFullSlot && !metrics.oneBitChrome) {
     screen.target().fill(tabRect, fui::Paint::dither(fui::Color::LightGray));
   }
   fui::tabBar(screen.frame(), tabRect, tabProps);

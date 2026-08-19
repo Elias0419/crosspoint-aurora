@@ -339,7 +339,7 @@ bool SettingsActivity::isTopLevelSetting(StrId nameId) {
     case StrId::STR_SLEEP_SCREEN:
     case StrId::STR_REFRESH_FREQ:
     case StrId::STR_SHOW_BUTTON_HINTS:
-    case StrId::STR_HOME_KEY_FUNCTION:
+    case StrId::STR_HOME_KEY_TAP:
     case StrId::STR_WIFI_NETWORKS:
     case StrId::STR_TIME_TO_SLEEP:
     case StrId::STR_LANGUAGE:
@@ -381,7 +381,7 @@ void SettingsActivity::buildAuroraEntries() {
                                         StrId::STR_DROP_CAPS, StrId::STR_DROP_CAP_FONT, StrId::STR_FONT_SIZE,
                                         StrId::STR_LINE_SPACING, StrId::STR_SCREEN_MARGIN, StrId::STR_PARA_ALIGNMENT});
     addSection(StrId::STR_CAT_DISPLAY, {StrId::STR_UI_THEME, StrId::STR_SLEEP_SCREEN, StrId::STR_REFRESH_FREQ,
-                                        StrId::STR_SHOW_BUTTON_HINTS, StrId::STR_HOME_KEY_FUNCTION});
+                                        StrId::STR_SHOW_BUTTON_HINTS, StrId::STR_HOME_KEY_TAP});
     addSection(StrId::STR_CAT_DEVICE,
                {StrId::STR_WIFI_NETWORKS, StrId::STR_TIME_TO_SLEEP, StrId::STR_LANGUAGE, StrId::STR_CHECK_UPDATES});
     // Spacer header (no label) so the entry below sits in its own card.
@@ -783,11 +783,10 @@ void SettingsActivity::render(RenderLock&&) {
   const auto& metrics = UITheme::getInstance().getMetrics();
 
   // Header via GUI.drawHeader (already FreeInkUI-themed) for the battery
-  // indicator; the rest of the screen renders through the app.
-  // Version rides in the header's trailing label slot: the footer position
-  // conflicts with button hints on non-touch devices.
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_SETTINGS_TITLE),
-                 CROSSPOINT_VERSION);
+  // indicator; the rest of the screen renders through the app. The firmware
+  // version is deliberately not in the header: it competes with the clock and
+  // battery for the same band (it lives in the About/update screens instead).
+  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_SETTINGS_TITLE));
 
   renderUi();
 

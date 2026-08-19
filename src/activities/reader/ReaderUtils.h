@@ -61,11 +61,17 @@ inline PageTurnResult detectPageTurn(const MappedInputManager& input) {
                 : (input.wasReleased(MappedInputManager::Button::PageBack) || input.wasReleased(prevButton)));
   const bool powerTurn = SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::PAGE_TURN &&
                          input.wasReleased(MappedInputManager::Button::Power);
+  const bool powerTurnBack = SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::PAGE_TURN_BACK &&
+                             input.wasReleased(MappedInputManager::Button::Power);
   const bool next = tiltNext || (usePress ? (input.wasPressed(MappedInputManager::Button::PageForward) || powerTurn ||
                                              input.wasPressed(nextButton))
                                           : (input.wasReleased(MappedInputManager::Button::PageForward) || powerTurn ||
                                              input.wasReleased(nextButton)));
-  return {prev, next, tiltPrev || tiltNext};
+  // Configurable-button actions (main.cpp's dispatcher) reach the reader as
+  // frame-scoped page requests, so any button can be bound to a page turn
+  // without pretending to be a specific physical key.
+  return {prev || powerTurnBack || MappedInputManager::pagePrevRequested(),
+          next || MappedInputManager::pageNextRequested(), tiltPrev || tiltNext};
 }
 
 struct TouchPageTurn {

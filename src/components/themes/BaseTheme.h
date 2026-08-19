@@ -68,12 +68,12 @@ struct HomeHitLayout {
 struct ReaderToolbarHit {
   // Rect's constructor is explicit, so spell the member defaults out (a bare
   // {} would be copy-list-initialization, which explicit forbids).
-  Rect topBar = Rect();   // tap = dismiss (the back chevron lives here)
-  Rect prevBtn = Rect();  // scrub row: previous chapter
-  Rect nextBtn = Rect();  // scrub row: next chapter
-  Rect track = Rect();    // scrub row: progress track (tap = jump to fraction)
+  Rect topBar = Rect();                      // tap = dismiss (the back chevron lives here)
+  Rect prevBtn = Rect();                     // scrub row: previous chapter
+  Rect nextBtn = Rect();                     // scrub row: next chapter
+  Rect track = Rect();                       // scrub row: progress track (tap = jump to fraction)
   Rect tools[3] = {Rect(), Rect(), Rect()};  // Contents / Text / More
-  int bottomTop = 0;  // bottom bar top edge; taps between topBar and here dismiss
+  int bottomTop = 0;                         // bottom bar top edge; taps between topBar and here dismiss
   bool valid = false;
 };
 
@@ -131,6 +131,10 @@ struct ThemeMetrics {
   // Selected-tab pill fills its equal-width slot (legacy RoundedRaff tabs)
   // instead of shrinking to hug the label (legacy Lyra tabs).
   bool tabPillFullSlot = false;
+  // Pure 1-bit chrome: no dithered-gray washes, pills, or dim layers anywhere.
+  // Aurora sets this — dithered grays read as muddy texture on the T5S3's matte
+  // panel, so selection is carried by solid black / outlines instead.
+  bool oneBitChrome = false;
 
   int scrollBarWidth;
   int scrollBarRightOffset;

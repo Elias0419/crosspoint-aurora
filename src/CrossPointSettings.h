@@ -155,17 +155,28 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     REFRESH_FREQUENCY_COUNT
   };
 
-  // Capacitive home-key tap actions (GT911 boards). The key's long press keeps
-  // running LONG_PRESS_MENU_FUNCTION in the reader regardless of this choice.
-  enum HOME_KEY_FUNCTION {
-    HOME_KEY_BACK = 0,
-    HOME_KEY_HOME = 1,
-    HOME_KEY_LIGHT = 2,
-    HOME_KEY_SLEEP = 3,
-    HOME_KEY_FUNCTION_COUNT
+  // Shared action list for the configurable buttons (BOOT/power hold, the
+  // side/user button, the capacitive Home key). Persisted by index — append
+  // new actions at the END and mirror the label list in SettingsList.h.
+  enum BUTTON_ACTION {
+    BTN_ACT_NONE = 0,
+    BTN_ACT_PAGE_NEXT = 1,
+    BTN_ACT_PAGE_PREV = 2,
+    BTN_ACT_BACK = 3,
+    BTN_ACT_HOME = 4,
+    BTN_ACT_READER_MENU = 5,
+    BTN_ACT_CONTROL_CENTER = 6,
+    BTN_ACT_NIGHT_MODE = 7,
+    BTN_ACT_REFRESH = 8,
+    BTN_ACT_FRONTLIGHT = 9,
+    BTN_ACT_TOUCH_TOGGLE = 10,
+    BTN_ACT_SLEEP = 11,
+    BUTTON_ACTION_COUNT
   };
 
-  // Short power button press actions
+  // Short power button press actions. PAGE_TURN is the historical "page next";
+  // PAGE_TURN_BACK extends it with "page previous" (appended to keep persisted
+  // indices stable).
   enum SHORT_PWRBTN {
     IGNORE = 0,
     SLEEP = 1,
@@ -173,6 +184,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     FORCE_REFRESH = 3,
     FOOTNOTES = 4,
     PWR_CONFIRM = 5,
+    PAGE_TURN_BACK = 6,
     SHORT_PWRBTN_COUNT
   };
 
@@ -255,9 +267,14 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t textAntiAliasing = 1;
   // Short power button click behaviour
   uint8_t shortPwrBtn = IGNORE;
-  // Capacitive home-key tap action (GT911 boards). Persisted by index — append
-  // new values at the END of HOME_KEY_FUNCTION and the SettingsList enumValues.
-  uint8_t homeKeyFunction = HOME_KEY_BACK;
+  // Configurable button actions (BUTTON_ACTION values). Short = tap, long =
+  // hold past the long-press threshold. The user/side button is the PCA9535
+  // expander key on the LilyGo T5S3 (labelled IO48 on the case).
+  uint8_t homeKeyShortAction = BTN_ACT_BACK;
+  uint8_t homeKeyLongAction = BTN_ACT_CONTROL_CENTER;
+  uint8_t userBtnShortAction = BTN_ACT_PAGE_NEXT;
+  uint8_t userBtnLongAction = BTN_ACT_TOUCH_TOGGLE;
+  uint8_t pwrBtnLongAction = BTN_ACT_SLEEP;
   // EPUB reading orientation settings
   // 0 = portrait (default), 1 = landscape clockwise, 2 = inverted, 3 = landscape counter-clockwise
   uint8_t orientation = PORTRAIT;

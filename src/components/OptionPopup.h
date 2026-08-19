@@ -204,6 +204,26 @@ class OptionPopup {
     props.styles.disabled = props.styles.normal;
     props.buttonHeight =
         fui::clampI16(target.lineHeight(fui::GfxRendererTarget::FONT_BODY) + metrics.optionPopupSelectionVPadding * 2);
+    if (metrics.oneBitChrome) {
+      // 1-bit action-sheet rows: outlined cards, the current choice filled
+      // solid. The SDK default highlights with a LightGray dither, which turns
+      // to muddy texture on a matte panel.
+      fui::StyleSet buttons;
+      buttons.explicitlySet = true;
+      buttons.normal.background = fui::Paint::solid(fui::Color::White);
+      buttons.normal.foreground = fui::Paint::solid(fui::Color::Black);
+      buttons.normal.border = fui::Paint::solid(fui::Color::Black);
+      buttons.normal.borderWidth = 1;
+      buttons.normal.radius = static_cast<uint8_t>(metrics.listRowRadius > 0 ? metrics.listRowRadius : 10);
+      buttons.selected = buttons.normal;
+      buttons.selected.background = fui::Paint::solid(fui::Color::Black);
+      buttons.selected.foreground = fui::Paint::solid(fui::Color::White);
+      buttons.selected.borderWidth = 2;
+      buttons.focused = buttons.selected;
+      buttons.active = buttons.selected;
+      buttons.disabled = buttons.normal;
+      props.buttonStyles = buttons;
+    }
 
     // Fixed fraction of the screen, clamped by the theme's side margins; the
     // old max-text-width sizing is gone, long labels wrap inside the buttons.
