@@ -535,6 +535,21 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         // on next WiFi connect, which is useful when crossing time zones.
         SettingInfo::Toggle(StrId::STR_CLOCK_SYNCED, &CrossPointSettings::clockHasBeenSynced, "clockHasBeenSynced",
                             StrId::STR_CUSTOMISE_STATUS_BAR),
+        // --- Control Center contents (web-only, uses ControlCenterSettingsActivity) ---
+        // One toggle per quick-setting tile, in the panel's grid order. The
+        // frontlight row has no flag: it is what the panel is for.
+        SettingInfo::Toggle(StrId::STR_NIGHT_MODE, &CrossPointSettings::ccTileNightMode, "ccTileNightMode",
+                            StrId::STR_CUSTOMISE_CONTROL_CENTER),
+        SettingInfo::Toggle(StrId::STR_FORCE_REFRESH, &CrossPointSettings::ccTileRefresh, "ccTileRefresh",
+                            StrId::STR_CUSTOMISE_CONTROL_CENTER),
+        SettingInfo::Toggle(StrId::STR_ORIENTATION, &CrossPointSettings::ccTileOrientation, "ccTileOrientation",
+                            StrId::STR_CUSTOMISE_CONTROL_CENTER),
+        SettingInfo::Toggle(StrId::STR_TOUCH_TOGGLE, &CrossPointSettings::ccTileTouch, "ccTileTouch",
+                            StrId::STR_CUSTOMISE_CONTROL_CENTER),
+        SettingInfo::Toggle(StrId::STR_SCREENSHOT_BUTTON, &CrossPointSettings::ccTileScreenshot, "ccTileScreenshot",
+                            StrId::STR_CUSTOMISE_CONTROL_CENTER),
+        SettingInfo::Toggle(StrId::STR_SLEEP, &CrossPointSettings::ccTileSleep, "ccTileSleep",
+                            StrId::STR_CUSTOMISE_CONTROL_CENTER),
     };
     // Only show tilt page turn setting when the QMI8658 IMU is present (X3)
     if (halTiltSensor.isAvailable()) {

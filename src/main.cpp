@@ -307,6 +307,14 @@ static bool loadSleepFrameBuffer() {
 // Enter deep sleep mode
 void enterDeepSleep(bool fromTimeout = false) {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
+  // Retire the render task first. Everything below runs on this task: the sleep
+  // screen paints from SleepActivity::onEnter(), then the panel, the SD card and
+  // the switched rails go down. A render arriving in the middle of that drives a
+  // display whose power is being cut and hangs inside the driver's busy-wait
+  // instead of returning — a lockup, not a crash with a backtrace. Sleep used to
+  // be reached only from an idle power-button press; a control-center tile or a
+  // key bound to "Sleep" can fire while the UI is still repainting.
+  activityManager.stopRendering();
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
 
   const bool isQuickResumeSleep =

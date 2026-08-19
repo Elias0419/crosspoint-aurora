@@ -54,7 +54,7 @@ void ActivityManager::renderTaskLoop() {
     // Acquire the lock before reading currentActivity to avoid a TOCTOU race
     // where the main task deletes the activity between the null-check and render().
     RenderLock lock;
-    if (currentActivity) {
+    if (currentActivity && !renderingStopped) {
       HalPowerManager::Lock powerLock;  // Ensure we don't go into low-power mode while rendering
       // Night mode inverts the whole UI, not just the reading page: a dark
       // reader behind bright-white menus and control center defeats the point
@@ -387,6 +387,13 @@ void ActivityManager::requestUpdateAndWait() {
 
   xTaskNotify(renderTaskHandle, 1, eIncrement);
   ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+}
+
+void ActivityManager::stopRendering() {
+  renderingStopped = true;
+  // Taking the lock waits out a render already in progress; releasing it right
+  // away is fine, since renderTaskLoop() now skips the render itself.
+  RenderLock drain;
 }
 
 // RenderLock

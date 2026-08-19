@@ -8,9 +8,11 @@
 // or a button bound to "Control Center" (iOS Control Center style): a grabber,
 // the frontlight brightness/warmth sliders (on boards with a light), and a grid
 // of quick-setting tiles — night mode, ghost-cleanup refresh, reading
-// orientation, the touch kill-switch, the frontlight, and sleep. Pure 1-bit: no
-// dithered fills, selection reads as a filled tile. The grabber sits along the
-// panel's bottom edge, the edge the sheet is dragged from.
+// orientation, the touch kill-switch, a screenshot, and sleep, each of which the
+// user can hide (Settings -> Display -> Customise Control Center). The
+// frontlight controls are always there: they are what the panel is for. Pure
+// 1-bit: no dithered fills, selection reads as a filled tile. The grabber sits
+// along the panel's bottom edge, the edge the sheet is dragged from.
 class FrontlightPanelActivity final : public Activity, private UiAppHost {
   ButtonNavigator buttonNavigator;
 
@@ -50,7 +52,9 @@ class FrontlightPanelActivity final : public Activity, private UiAppHost {
   void runTile(int idx);
   void close();
 
-  // Quick-setting tiles, in grid order (2 columns).
+  // Quick-setting tiles, in grid order (2 columns). This is the catalogue size;
+  // which of them are laid out is a user setting (Settings -> Display ->
+  // Customise Control Center), so the grid may be shorter or empty.
   static constexpr int kTileCount = 6;
   // One-shot: the "refresh" tile re-drives the whole frame with the
   // ghost-cleanup waveform on the next render.

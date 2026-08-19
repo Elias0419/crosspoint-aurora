@@ -66,6 +66,10 @@ class ActivityManager {
   // This variable must only be set by the main loop, to avoid race conditions
   std::atomic<bool> requestedUpdate{false};
 
+  // Set once by stopRendering(); the render task drops every notification from
+  // then on. Never cleared — the only caller is on its way to deep sleep.
+  std::atomic<bool> renderingStopped{false};
+
  public:
   explicit ActivityManager(GfxRenderer& renderer, MappedInputManager& mappedInput)
       : renderer(renderer), mappedInput(mappedInput), renderingMutex(xSemaphoreCreateMutex()) {
@@ -116,6 +120,13 @@ class ActivityManager {
   // Trigger a render and block until it completes.
   // Must NOT be called from the render task or while holding a RenderLock.
   void requestUpdateAndWait();
+
+  // Retire the render task: wait for any render in flight to finish, then make
+  // every later notification a no-op. One-way — for the deep-sleep sequence,
+  // which powers down the panel, the SD card and the touch rails from the main
+  // task. A render racing that teardown drives a display whose rail is going
+  // away, which hangs in the driver's busy-wait rather than returning.
+  void stopRendering();
 };
 
 extern ActivityManager activityManager;  // singleton, to be defined in main.cpp

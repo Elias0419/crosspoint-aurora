@@ -12,6 +12,7 @@
 
 #include "ButtonRemapActivity.h"
 #include "ClearCacheActivity.h"
+#include "ControlCenterSettingsActivity.h"
 #include "CrossPointSettings.h"
 #include "DropCapFontSelectionActivity.h"
 #include "FontDownloadActivity.h"
@@ -100,6 +101,11 @@ void SettingsActivity::rebuildSettingsLists() {
   readerSettings.insert(readerSettings.begin() + 1,
                         SettingInfo::Action(StrId::STR_MANAGE_FONTS, SettingAction::DownloadFonts));
   readerSettings.push_back(SettingInfo::Action(StrId::STR_CUSTOMISE_STATUS_BAR, SettingAction::CustomiseStatusBar));
+  // The control center is display chrome, and it is reachable on every board
+  // (top-edge swipe, status-bar tap, or a key bound to it), so the row is not
+  // gated on touch.
+  displaySettings.push_back(
+      SettingInfo::Action(StrId::STR_CUSTOMISE_CONTROL_CENTER, SettingAction::CustomiseControlCenter));
 
   // Update currentSettings pointer and count for the active category
   switch (selectedCategoryIndex) {
@@ -594,6 +600,9 @@ void SettingsActivity::activateSetting(const SettingInfo& setting) {
         break;
       case SettingAction::CustomiseStatusBar:
         startActivityForResult(std::make_unique<StatusBarSettingsActivity>(renderer, mappedInput), resultHandler);
+        break;
+      case SettingAction::CustomiseControlCenter:
+        startActivityForResult(std::make_unique<ControlCenterSettingsActivity>(renderer, mappedInput), resultHandler);
         break;
       case SettingAction::KOReaderSync:
         startActivityForResult(std::make_unique<KOReaderSettingsActivity>(renderer, mappedInput), resultHandler);

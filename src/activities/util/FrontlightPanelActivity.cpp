@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <iterator>
 
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
@@ -41,6 +42,28 @@ constexpr int kTileCols = 2;
 // One percent per press, on the -/+ buttons and on the physical Left/Right keys
 // alike (both repeat while held), so a level can be set exactly.
 constexpr int BRIGHTNESS_STEP = 1;
+// The dimmest setting is 1%, not 0: turning the light off is what the lamp
+// button next to the slider is for, so a 0% "on" level would only be a second,
+// worse way to reach the same place.
+constexpr uint8_t MIN_BRIGHTNESS = 1;
+
+// Which quick-setting tiles the panel shows is a user setting (Settings ->
+// Display -> Customise Control Center). Order matches the tile ids runTile()
+// switches on; the flags are read live so a change shows on the next open.
+// Writes the ids of the enabled tiles into out (capacity kTileCount) and
+// returns how many there are.
+int visibleTiles(int* out) {
+  static uint8_t CrossPointSettings::* const flags[] = {
+      &CrossPointSettings::ccTileNightMode,   &CrossPointSettings::ccTileRefresh,
+      &CrossPointSettings::ccTileOrientation, &CrossPointSettings::ccTileTouch,
+      &CrossPointSettings::ccTileScreenshot,  &CrossPointSettings::ccTileSleep,
+  };
+  int count = 0;
+  for (int i = 0; i < static_cast<int>(std::size(flags)); ++i) {
+    if (SETTINGS.*(flags[i])) out[count++] = i;
+  }
+  return count;
+}
 
 uint8_t percentFromPermille(const int16_t permille) {
   int value = (static_cast<int>(permille) * 100 + 500) / 1000;
@@ -97,7 +120,10 @@ FrontlightPanelActivity::FrontlightPanelActivity(GfxRenderer& renderer, MappedIn
 void FrontlightPanelActivity::onEnter() {
   Activity::onEnter();
 
-  brightness = Frontlight.brightness();
+  // A stored 0% predates the 1% floor (or came from the web settings): show it
+  // as the floor rather than a level the slider can no longer produce. onExit
+  // persists that, which is the intent — 0 is not a brightness any more.
+  brightness = std::max(MIN_BRIGHTNESS, Frontlight.brightness());
   warmth = Frontlight.warmth();
   lightOn = Frontlight.isOn();
   lightOnChanged = false;
@@ -133,7 +159,7 @@ void FrontlightPanelActivity::onExit() {
 void FrontlightPanelActivity::onBrightnessEvent(const fui::ActionEvent& event, void* user) {
   auto* self = static_cast<FrontlightPanelActivity*>(user);
   if (event.dragPermille < 0) return;
-  self->brightness = percentFromPermille(event.dragPermille);
+  self->brightness = std::max(MIN_BRIGHTNESS, percentFromPermille(event.dragPermille));
   Frontlight.setBrightness(self->brightness);
   if (!self->lightOn) {
     self->lightOn = true;
@@ -204,7 +230,7 @@ void FrontlightPanelActivity::runTile(const int idx) {
 
 void FrontlightPanelActivity::adjustBrightness(const int delta) {
   int next = static_cast<int>(brightness) + delta;
-  if (next < 0) next = 0;
+  if (next < MIN_BRIGHTNESS) next = MIN_BRIGHTNESS;
   if (next > 100) next = 100;
   if (next == brightness) return;
   brightness = static_cast<uint8_t>(next);
@@ -285,8 +311,15 @@ int FrontlightPanelActivity::computePanelBottom() const {
     }
     y += tokens.spaceSm;
   }
-  const int rows = (kTileCount + kTileCols - 1) / kTileCols;
-  y += rows * kTileHeight + (rows - 1) * kTileGap;
+  // Only the tiles the user kept take up height, or the panel would hang down
+  // over empty space (and, with every tile hidden, the sheet is exactly the
+  // frontlight controls).
+  int ids[kTileCount];
+  const int tileCount = visibleTiles(ids);
+  if (tileCount > 0) {
+    const int rows = (tileCount + kTileCols - 1) / kTileCols;
+    y += rows * kTileHeight + (rows - 1) * kTileGap;
+  }
   y += tokens.spaceMd + kGrabberHeight + tokens.spaceLg;  // grabber band + air
   return y;
 }
@@ -418,8 +451,13 @@ void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
   }
 
   // Quick-setting tiles. Two columns of finger-sized cards; a tile whose
-  // setting is currently on draws filled (StateChecked -> selected style).
-  {
+  // setting is currently on draws filled (StateChecked -> selected style). Only
+  // the tiles the user kept are laid out, and the button's value stays the tile
+  // id (not its grid position) so runTile() is unaffected by what is hidden.
+  static_assert(kTileCount == 6, "visibleTiles() writes up to six tile ids");
+  int ids[kTileCount];
+  const int tileCount = visibleTiles(ids);
+  if (tileCount > 0) {
     static constexpr StrId kOrientNames[4] = {StrId::STR_PORTRAIT, StrId::STR_LANDSCAPE_CW,
                                               StrId::STR_ORIENTATION_INVERTED, StrId::STR_LANDSCAPE_CCW};
     char orientLabel[64];
@@ -435,20 +473,21 @@ void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
         gpio.touchEnabled() ? fui::StateNormal : fui::StateChecked, fui::StateNormal, fui::StateNormal};
 
     const fui::StyleSet styles = tileStyles();
-    const int rows = (kTileCount + kTileCols - 1) / kTileCols;
+    const int rows = (tileCount + kTileCols - 1) / kTileCols;
     for (int r = 0; r < rows; ++r) {
       const fui::Rect band = screen.takeTop(kTileHeight, r + 1 < rows ? kTileGap : 0)
                                  .inset(fui::Insets{0, kPanelSideMargin, 0, kPanelSideMargin});
       const int16_t tileW = static_cast<int16_t>((band.width - kTileGap * (kTileCols - 1)) / kTileCols);
       for (int c = 0; c < kTileCols; ++c) {
-        const int idx = r * kTileCols + c;
-        if (idx >= kTileCount) break;
+        const int slot = r * kTileCols + c;
+        if (slot >= tileCount) break;
+        const int id = ids[slot];
         const fui::Rect tile{static_cast<int16_t>(band.x + c * (tileW + kTileGap)), band.y, tileW, kTileHeight};
         fui::ButtonProps props;
-        props.label = labels[idx];
+        props.label = labels[id];
         props.action = ACTION_TILE;
-        props.value = static_cast<int16_t>(idx);
-        props.state = states[idx];
+        props.value = static_cast<int16_t>(id);
+        props.state = states[id];
         props.styles = styles;
         props.text = theme.smallText;
         screen.button(props, tile);
