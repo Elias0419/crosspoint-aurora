@@ -108,6 +108,20 @@ class EpubReaderActivity final : public ReaderActivity {
   void rememberCurrentContentOffset();
   // Aurora reader overlays (toolbar + Contents/Text/More panels over the page).
   void openOverlay(Overlay target);
+  void closeOverlayToPage();
+  // Snapshot of the reader-text settings taken when the Text panel opens, so
+  // leaving it can skip the re-pagination (a full re-render) when nothing
+  // actually changed.
+  struct TextSettingsSnapshot {
+    uint8_t fontFamily = 0;
+    uint8_t fontPointSize = 0;
+    uint8_t lineSpacing = 0;
+    uint8_t paragraphAlignment = 0;
+    uint8_t focusReadingEnabled = 0;
+    char sdFontFamilyName[64] = {};
+  } textSnapshot;
+  void snapshotTextSettings();
+  bool textSettingsChanged() const;
   void discardOverlayPage();
   void handleOverlayInput();
   void renderOverlay();

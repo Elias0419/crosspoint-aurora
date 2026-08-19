@@ -82,6 +82,8 @@ struct ReaderPanelHit {
   int listTop = 0;   // first row y
   int rowHeight = 0;
   int pageItems = 0;
+  // The sheet's own Contents/Text/More switcher row (tap to jump panels).
+  Rect tools[3] = {Rect(), Rect(), Rect()};
   bool valid = false;
 };
 
@@ -363,9 +365,12 @@ class BaseTheme {
   virtual void drawReaderToolbar(GfxRenderer&, Rect /*screen*/, const ReaderToolbarInfo& /*info*/) const {}
   // Draws a reader overlay panel (a bottom sheet with a title and a scrollable
   // item list) over the page — the Aurora reader's Contents/Text/More tools.
+  // activeTool highlights the panel's own Contents/Text/More switcher row
+  // (0/1/2); pass -1 on themes/boards without one.
   virtual void drawReaderPanel(GfxRenderer&, Rect /*screen*/, const char* /*title*/, int /*itemCount*/,
                                int /*selectedIndex*/, const std::function<std::string(int)>& /*rowText*/,
-                               const std::function<std::string(int)>& /*rowValue*/ = nullptr) const {}
+                               const std::function<std::string(int)>& /*rowValue*/ = nullptr,
+                               int /*activeTool*/ = -1) const {}
   // Tap-target geometry mirroring the theme-owned layouts above (see the
   // structs' comments). Themes that own the layout must keep these in sync
   // with their draw functions.

@@ -52,7 +52,8 @@ class AuroraTheme : public BaseTheme {
   void drawReaderToolbar(GfxRenderer& renderer, Rect screen, const ReaderToolbarInfo& info) const override;
   void drawReaderPanel(GfxRenderer& renderer, Rect screen, const char* title, int itemCount, int selectedIndex,
                        const std::function<std::string(int)>& rowText,
-                       const std::function<std::string(int)>& rowValue = nullptr) const override;
+                       const std::function<std::string(int)>& rowValue = nullptr,
+                       int activeTool = -1) const override;
 
   // Tap-target geometry mirroring drawHomeScreen / drawReaderToolbar /
   // drawReaderPanel — keep in sync with those draw functions.

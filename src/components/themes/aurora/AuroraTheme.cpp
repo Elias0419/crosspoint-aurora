@@ -73,6 +73,7 @@ constexpr int kScrubRowY = 16;        // scrub row offset inside the bottom bar
 constexpr int kMetaRowY = 84;         // meta divider offset inside the bottom bar
 constexpr int kToolRowY = 116;        // tool row divider offset inside the bottom bar
 constexpr int kPanelRowH = 56;        // panel (Contents/Text/More) row height
+constexpr int kPanelToolRowH = 78;    // panel-bottom tool switcher (glyph + label)
 
 // Resolve a UIIcon to its 32px bitmap (mirrors LyraTheme's iconForName for the
 // icons the bottom bar uses; keeps Aurora self-contained).
@@ -883,7 +884,7 @@ void AuroraTheme::drawReaderToolbar(GfxRenderer& renderer, Rect screen, const Re
 
 void AuroraTheme::drawReaderPanel(GfxRenderer& renderer, Rect screen, const char* title, int itemCount,
                                   int selectedIndex, const std::function<std::string(int)>& rowText,
-                                  const std::function<std::string(int)>& rowValue) const {
+                                  const std::function<std::string(int)>& rowValue, int activeTool) const {
   const int X = screen.x;
   const int Y = screen.y;
   const int W = screen.width;
@@ -903,9 +904,11 @@ void AuroraTheme::drawReaderPanel(GfxRenderer& renderer, Rect screen, const char
 
   const int contentTop = dividerY + 10;
   // Touch boards get no hint row; keep a small bottom inset so the last row
-  // doesn't kiss the screen edge.
+  // doesn't kiss the screen edge. The tool switcher row (when shown) claims
+  // the sheet's bottom band.
   const int hintReserve = gpio.hasTouch() ? 12 : 44;
-  const int contentH = (Y + H) - contentTop - hintReserve;
+  const int toolRowH = activeTool >= 0 ? kPanelToolRowH : 0;
+  const int contentH = (Y + H) - contentTop - hintReserve - toolRowH;
 
   // Rows rendered here (not via drawList) at a finger-sized kPanelRowH: name
   // left, value right, rounded selection pill. readerPanelHitAreas mirrors
@@ -940,6 +943,33 @@ void AuroraTheme::drawReaderPanel(GfxRenderer& renderer, Rect screen, const char
     snprintf(buf, sizeof(buf), "%d/%d", pageStart / pageItems + 1, totalPages);
     const int tw = renderer.getTextWidth(kCaptionFontId, buf);
     renderer.drawText(kCaptionFontId, X + W - P - tw, titleY + 4, buf);
+  }
+
+  // Sheet-bottom tool switcher: the same Contents / Text / More row the
+  // toolbar shows, so panels can be hopped directly (tap targets mirrored in
+  // readerPanelHitAreas). The active panel sits in a rounded pill.
+  if (activeTool >= 0) {
+    const int ty = (Y + H) - kPanelToolRowH;
+    renderer.drawLine(X + 16, ty, X + W - 16, ty);
+    const char* labels[3] = {tr(STR_TOOL_CONTENTS), tr(STR_TOOL_TEXT), tr(STR_TOOL_MORE)};
+    const int slotW = W / 3;
+    for (int i = 0; i < 3; ++i) {
+      const int cx = X + slotW * i + slotW / 2;
+      if (i == activeTool) {
+        renderer.drawRoundedRect(cx - slotW / 2 + 10, ty + 6, slotW - 20, kPanelToolRowH - 12, 2, 14, true);
+      }
+      const int gy = ty + 16;
+      if (i == 0) {  // Contents: hamburger
+        for (int k = 0; k < 3; ++k) renderer.drawLine(cx - 13, gy + k * 7, cx + 13, gy + k * 7, 2, true);
+      } else if (i == 1) {  // Text: "Aa"
+        const int aw = renderer.getTextWidth(kTitleFontId, "Aa", EpdFontFamily::BOLD);
+        renderer.drawText(kTitleFontId, cx - aw / 2, ty + 10, "Aa", true, EpdFontFamily::BOLD);
+      } else {  // More: three dots
+        for (int k = -1; k <= 1; ++k) renderer.fillRect(cx + k * 9 - 1, gy + 6, 4, 4, true);
+      }
+      const int lw = renderer.getTextWidth(kBarLabelFontId, labels[i], EpdFontFamily::BOLD);
+      renderer.drawText(kBarLabelFontId, cx - lw / 2, ty + 48, labels[i], true, EpdFontFamily::BOLD);
+    }
   }
 }
 
@@ -1002,8 +1032,12 @@ ReaderPanelHit AuroraTheme::readerPanelHitAreas(const GfxRenderer& renderer) con
   hit.listTop = dividerY + 10;
   hit.rowHeight = kPanelRowH;
   const int hintReserve = gpio.hasTouch() ? 12 : 44;
-  const int contentH = H - hit.listTop - hintReserve;
+  const int contentH = H - hit.listTop - hintReserve - kPanelToolRowH;
   hit.pageItems = hit.rowHeight > 0 ? contentH / hit.rowHeight : 0;
+  const int ty = H - kPanelToolRowH;
+  const int W = renderer.getScreenWidth();
+  const int slotW = W / 3;
+  for (int i = 0; i < 3; ++i) hit.tools[i] = Rect{slotW * i, ty, slotW, kPanelToolRowH};
   hit.valid = hit.pageItems > 0;
   return hit;
 }

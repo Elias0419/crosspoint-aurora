@@ -549,9 +549,13 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
   if (BoardConfig::hasTouch()) {
     v.erase(std::remove_if(v.begin(), v.end(),
                            [](const SettingInfo& s) {
+                             // Button-hint chrome never draws on touch boards
+                             // (getMetrics() zeroes its row), so its toggle
+                             // would be a no-op row.
                              return s.nameId == StrId::STR_FRONT_BTN_FOLLOW_ORIENTATION ||
                                     s.nameId == StrId::STR_SUNLIGHT_FADING_FIX ||
-                                    s.nameId == StrId::STR_BACK_SHORT_TO_FILE_BROWSER;
+                                    s.nameId == StrId::STR_BACK_SHORT_TO_FILE_BROWSER ||
+                                    s.nameId == StrId::STR_SHOW_BUTTON_HINTS;
                            }),
             v.end());
   }

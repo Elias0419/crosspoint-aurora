@@ -1347,7 +1347,9 @@ void EpubReaderActivity::renderBook() {
     discardOverlayPage();
     overlayPageStored = renderer.storeBwBuffer();
     renderOverlay();
-    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+    // HALF (AA-ghost cleanup) only on the Xteink grayscale panels; elsewhere
+    // it is the flashing quality mode and FAST is clean (see openOverlay).
+    renderer.displayBuffer(gpio.isXteinkDevice() ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
   }
 }
 
@@ -1679,6 +1681,24 @@ namespace {
 constexpr int kTextRowCount = 5;
 }  // namespace
 
+void EpubReaderActivity::snapshotTextSettings() {
+  textSnapshot.fontFamily = SETTINGS.fontFamily;
+  textSnapshot.fontPointSize = SETTINGS.fontPointSize;
+  textSnapshot.lineSpacing = SETTINGS.lineSpacing;
+  textSnapshot.paragraphAlignment = SETTINGS.paragraphAlignment;
+  textSnapshot.focusReadingEnabled = SETTINGS.focusReadingEnabled;
+  strncpy(textSnapshot.sdFontFamilyName, SETTINGS.sdFontFamilyName, sizeof(textSnapshot.sdFontFamilyName) - 1);
+  textSnapshot.sdFontFamilyName[sizeof(textSnapshot.sdFontFamilyName) - 1] = ' ';
+}
+
+bool EpubReaderActivity::textSettingsChanged() const {
+  return textSnapshot.fontFamily != SETTINGS.fontFamily || textSnapshot.fontPointSize != SETTINGS.fontPointSize ||
+         textSnapshot.lineSpacing != SETTINGS.lineSpacing ||
+         textSnapshot.paragraphAlignment != SETTINGS.paragraphAlignment ||
+         textSnapshot.focusReadingEnabled != SETTINGS.focusReadingEnabled ||
+         strncmp(textSnapshot.sdFontFamilyName, SETTINGS.sdFontFamilyName, sizeof(textSnapshot.sdFontFamilyName)) != 0;
+}
+
 void EpubReaderActivity::discardOverlayPage() {
   if (!overlayPageStored) return;
   renderer.discardStoredBwBuffer();
@@ -1697,6 +1717,7 @@ void EpubReaderActivity::openOverlay(Overlay target) {
       break;
     case Overlay::Text:
       panelIndex = 0;
+      snapshotTextSettings();
       break;
     case Overlay::More:
       panelIndex = 0;
@@ -1721,14 +1742,34 @@ void EpubReaderActivity::openOverlay(Overlay target) {
   if (section) {
     if (previous == Overlay::None) {
       // Snapshot the clean page so stepping back from a panel to the toolbar
-      // can restore it without a full re-render (see dismissPanel paths).
+      // (and closing, on non-Xteink boards) can restore it without a full
+      // re-render (see dismissPanel / closeOverlayToPage).
       overlayPageStored = renderer.storeBwBuffer();
     }
     renderOverlay();
-    renderer.displayBuffer(previous == Overlay::None ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
+    // The AA-ghost cleanup HALF is an X3/X4 waveform concern; on other panels
+    // (T5S3's LgfxEpd) HALF maps to the flashing quality mode, so a FAST
+    // differential both looks right and avoids the full-screen blink.
+    const bool needsGhostCleanup = gpio.isXteinkDevice() && previous == Overlay::None;
+    renderer.displayBuffer(needsGhostCleanup ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
   } else {
     requestUpdate();
   }
+}
+
+// Close the overlay back to the reading page. Boards without the Xteink
+// grayscale-AA pass can restore the page snapshot and push one FAST refresh —
+// no re-render, no flash; Xteink boards re-render to restore the AA planes.
+void EpubReaderActivity::closeOverlayToPage() {
+  overlay = Overlay::None;
+  if (!gpio.isXteinkDevice() && overlayPageStored) {
+    renderer.restoreBwBuffer();
+    overlayPageStored = false;
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+    return;
+  }
+  discardOverlayPage();
+  requestUpdate();  // redraw the clean page
 }
 
 void EpubReaderActivity::renderOverlay() {
@@ -1757,19 +1798,22 @@ void EpubReaderActivity::renderOverlay() {
 
   // Panels (Contents / Text / More): a bottom sheet over the page + button hints.
   if (overlay == Overlay::Contents) {
-    GUI.drawReaderPanel(renderer, screen, tr(STR_TOOL_CONTENTS), epub->getTocItemsCount(), panelIndex, [this](int i) {
-      const auto item = epub->getTocItem(i);
-      const int depth = item.level > 1 ? (item.level - 1) * 2 : 0;
-      return std::string(depth, ' ') + item.title;
-    });
+    GUI.drawReaderPanel(
+        renderer, screen, tr(STR_TOOL_CONTENTS), epub->getTocItemsCount(), panelIndex,
+        [this](int i) {
+          const auto item = epub->getTocItem(i);
+          const int depth = item.level > 1 ? (item.level - 1) * 2 : 0;
+          return std::string(depth, ' ') + item.title;
+        },
+        nullptr, /*activeTool=*/0);
   } else if (overlay == Overlay::Text) {
     GUI.drawReaderPanel(
         renderer, screen, tr(STR_TOOL_TEXT), kTextRowCount, panelIndex, [this](int i) { return textRowName(i); },
-        [this](int i) { return textRowValue(i); });
+        [this](int i) { return textRowValue(i); }, /*activeTool=*/1);
   } else if (overlay == Overlay::More) {
     GUI.drawReaderPanel(
         renderer, screen, tr(STR_TOOL_MORE), static_cast<int>(moreActions.size()), panelIndex,
-        [this](int i) { return moreRowName(i); }, [this](int i) { return moreRowValue(i); });
+        [this](int i) { return moreRowName(i); }, [this](int i) { return moreRowValue(i); }, /*activeTool=*/2);
   }
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
@@ -1827,18 +1871,14 @@ void EpubReaderActivity::handleOverlayInput() {
         return;
       }
       if (ty < hit.bottomTop) {
-        overlay = Overlay::None;
-        discardOverlayPage();
-        requestUpdate();  // redraw the clean page
+        closeOverlayToPage();
         return;
       }
       return;  // tap on the bottom bar's dead space: consumed, no action
     }
 
     if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-      overlay = Overlay::None;
-      discardOverlayPage();
-      requestUpdate();  // redraw the clean page
+      closeOverlayToPage();
       return;
     }
     if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
@@ -1909,7 +1949,7 @@ void EpubReaderActivity::handleOverlayInput() {
   // Steps up to the toolbar (Text persists + re-paginates first) — the Back
   // button and a tap on the page above the sheet.
   const auto dismissPanel = [this, &fastRedraw] {
-    if (overlay == Overlay::Text) {
+    if (overlay == Overlay::Text && textSettingsChanged()) {
       // Text changes re-paginate, so the stored page snapshot is stale.
       applyReaderTextSettings();
       overlay = Overlay::Toolbar;
@@ -1940,6 +1980,20 @@ void EpubReaderActivity::handleOverlayInput() {
       if (ty < hit.panelTop) {
         dismissPanel();
         return;
+      }
+      // Sheet-bottom tool switcher: hop straight to another panel (Text
+      // persists its edits through applyReaderTextSettings on the way out).
+      for (int i = 0; i < 3; ++i) {
+        const Rect& r = hit.tools[i];
+        if (r.width > 0 && tx >= r.x && tx < r.x + r.width && ty >= r.y && ty < r.y + r.height) {
+          const Overlay target = i == 0 ? Overlay::Contents : (i == 1 ? Overlay::Text : Overlay::More);
+          if (target != overlay) {
+            if (overlay == Overlay::Text && textSettingsChanged()) applyReaderTextSettings();
+            focusedTool = i;
+            openOverlay(target);
+          }
+          return;
+        }
       }
       // Right-edge strip pages the sheet by taps (tap-first: swipes are
       // unreliable on the T5S3's etched glass).
