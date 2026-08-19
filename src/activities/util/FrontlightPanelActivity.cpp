@@ -38,8 +38,9 @@ constexpr int16_t kTileHeight = 84;
 constexpr int16_t kTileRadius = 18;
 constexpr int16_t kTileGap = 12;
 constexpr int kTileCols = 2;
-constexpr int BUTTON_BRIGHTNESS_STEP = 5;
-constexpr int FINE_STEP = 1;
+// One percent per press, on the -/+ buttons and on the physical Left/Right keys
+// alike (both repeat while held), so a level can be set exactly.
+constexpr int BRIGHTNESS_STEP = 1;
 
 uint8_t percentFromPermille(const int16_t permille) {
   int value = (static_cast<int>(permille) * 100 + 500) / 1000;
@@ -153,11 +154,11 @@ void FrontlightPanelActivity::onToggleEvent(const fui::ActionEvent&, void* user)
 }
 
 void FrontlightPanelActivity::onBrightnessStepEvent(const fui::ActionEvent& event, void* user) {
-  static_cast<FrontlightPanelActivity*>(user)->adjustBrightness(event.value * FINE_STEP);
+  static_cast<FrontlightPanelActivity*>(user)->adjustBrightness(event.value);
 }
 
 void FrontlightPanelActivity::onWarmthStepEvent(const fui::ActionEvent& event, void* user) {
-  static_cast<FrontlightPanelActivity*>(user)->adjustWarmth(event.value * FINE_STEP);
+  static_cast<FrontlightPanelActivity*>(user)->adjustWarmth(event.value);
 }
 
 void FrontlightPanelActivity::onTileEvent(const fui::ActionEvent& event, void* user) {
@@ -268,9 +269,9 @@ void FrontlightPanelActivity::loop() {
   }
 
   buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Left},
-                                       [this] { adjustBrightness(-BUTTON_BRIGHTNESS_STEP); });
+                                       [this] { adjustBrightness(-BRIGHTNESS_STEP); });
   buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Right},
-                                       [this] { adjustBrightness(BUTTON_BRIGHTNESS_STEP); });
+                                       [this] { adjustBrightness(BRIGHTNESS_STEP); });
 }
 
 int FrontlightPanelActivity::computePanelBottom() const {
@@ -350,9 +351,9 @@ void FrontlightPanelActivity::addSliderRow(UiScreen& screen, const char* label, 
     bandRight = static_cast<int16_t>(bandRight - stepW - theme.spaceMd);
   }
 
-  stepButton(band.x, "-", -BUTTON_BRIGHTNESS_STEP);
+  stepButton(band.x, "-", -BRIGHTNESS_STEP);
   const int16_t plusX = static_cast<int16_t>(bandRight - stepW);
-  stepButton(plusX, "+", BUTTON_BRIGHTNESS_STEP);
+  stepButton(plusX, "+", BRIGHTNESS_STEP);
   // The pill spans the gap between the two step buttons.
   const int16_t rowX = static_cast<int16_t>(band.x + stepW + theme.spaceMd);
   const fui::Rect row{rowX, band.y, static_cast<int16_t>(plusX - theme.spaceMd - rowX), kSliderRowHeight};
@@ -371,23 +372,24 @@ void FrontlightPanelActivity::addSliderRow(UiScreen& screen, const char* label, 
   // its own border.
   constexpr int16_t kStroke = 2;
   const fui::Rect inner = row.inset(fui::Insets{kStroke, kStroke, kStroke, kStroke});
-  const int filled = (static_cast<int>(inner.width) * value) / 100;
-  if (filled > 0) {
-    // Round only the LEFT corners, at the capsule's own radius: that cap sits
-    // exactly on the inset capsule's left end (an inset capsule is still a
-    // capsule), while the right edge stays a straight line at the true value.
-    // Rounding all four corners instead forced a minimum width of a whole
-    // stadium, which made every value under ~20% draw identically.
-    // Floor the width at the cap's own radius: any narrower and the cap has to
-    // shrink with it, whose straight sides then poke out through the capsule's
-    // curve (a 5px sliver looked like a crack in the outline).
-    const int16_t cap = static_cast<int16_t>(inner.height / 2);
-    const int16_t fillW = static_cast<int16_t>(std::min<int>(inner.width, std::max<int>(filled, cap)));
-    const uint8_t r = static_cast<uint8_t>(cap);
-    screen.target().fill(fui::Rect{inner.x, inner.y, fillW, inner.height}, fui::Paint::solid(fui::Color::Black), r,
+  // A round handle rides the boundary between the filled and empty track, and
+  // the fill runs to its center. The handle is what hides the fill's square
+  // right edge — the earlier attempts either showed that edge or, with all four
+  // corners rounded, needed a whole-stadium minimum width that made every value
+  // under ~20% draw identically. Drawn white with its own outline so it stays
+  // visible against the black fill on one side and the white track on the other.
+  const int16_t cap = static_cast<int16_t>(inner.height / 2);
+  const int16_t travel = static_cast<int16_t>(inner.width - 2 * cap);
+  const int16_t handleCx = static_cast<int16_t>(inner.x + cap + (travel * value) / 100);
+  const int16_t fillW = static_cast<int16_t>(handleCx - inner.x);
+  if (fillW > 0) {
+    screen.target().fill(fui::Rect{inner.x, inner.y, fillW, inner.height}, fui::Paint::solid(fui::Color::Black), cap,
                          fui::CornerTopLeft | fui::CornerBottomLeft);
   }
   screen.target().stroke(row, fui::Paint::solid(fui::Color::Black), kStroke, kSliderTrackRadius);
+  const fui::Rect handle{static_cast<int16_t>(handleCx - cap), inner.y, static_cast<int16_t>(cap * 2), inner.height};
+  screen.target().fill(handle, fui::Paint::solid(fui::Color::White), cap);
+  screen.target().stroke(handle, fui::Paint::solid(fui::Color::Black), kStroke, cap);
 }
 
 void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
