@@ -1,5 +1,8 @@
 #include <Arduino.h>
 #include <BoardConfig.h>
+#if FREEINK_DEVICE_LILYGO
+#include <BoardT5S3.h>
+#endif
 #include <Epub.h>
 #include <FontCacheManager.h>
 #include <FontDecompressor.h>
@@ -395,6 +398,16 @@ void setup() {
 #endif
 
   HalSystem::begin();
+
+#if FREEINK_DEVICE_LILYGO
+  // The T5 S3's shared buses are board-owned and nothing in the SDK brings them up:
+  // I2C (PCA9535 expander, TPS65185 EPD PMIC, GT911, BQ27220/BQ25896) and the SD SPI
+  // bus, plus parking LoRa/GPS and registering the expander button hook. Must run
+  // before gpio.begin() (button hook) and Storage.begin() (SPI), and before the
+  // display driver's power hooks touch the PCA9535.
+  BoardT5S3::begin();
+#endif
+
   // checkPanic() clears the watchdog capture marker after a successful SD
   // dump, so retain the boot classification for the later activity route.
   const bool rebootedFromPanic = HalSystem::isRebootFromPanic();

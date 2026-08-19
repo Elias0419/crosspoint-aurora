@@ -5,9 +5,6 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <XteinkDetect.h>
-#if FREEINK_DEVICE_LILYGO
-#include <BoardT5S3.h>
-#endif
 #include <esp_sleep.h>
 
 // Global HalGPIO instance
@@ -137,13 +134,6 @@ void HalGPIO::begin() {
   }
 #else
   _deviceType = DeviceType::X4;
-#endif
-#if FREEINK_DEVICE_LILYGO
-  // LilyGo T5 S3: bring up the board's I2C bus, the SD SPI pins and the PCA9535
-  // expander before anything else touches them — the expander owns the EPD power
-  // sequence (used by the display driver) and the user button, which BoardT5S3
-  // registers with InputManager as a button hook here.
-  BoardT5S3::begin();
 #endif
   inputMgr.begin();
 }
