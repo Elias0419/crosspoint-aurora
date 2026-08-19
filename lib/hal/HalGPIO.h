@@ -56,6 +56,12 @@ class HalGPIO {
   bool injectPressEdge = false;
   bool injectReleaseEdge = false;
 
+  // Serial-injected touch state (see injectTouchTap and friends)
+  enum class InjectTouch : uint8_t { None, Tap, LongPress, Swipe };
+  InjectTouch pendingTouch = InjectTouch::None;
+  InjectTouch activeTouch = InjectTouch::None;
+  float injTouchX1 = 0, injTouchY1 = 0, injTouchX2 = 0, injTouchY2 = 0;
+
  public:
   enum class DeviceType : uint8_t { X4, X3 };
 
@@ -123,6 +129,15 @@ class HalGPIO {
   // InputManager reports real buttons. Boards whose buttons don't physically
   // exist (T5S3 has only the BOOT button) are driven entirely through this.
   void injectButton(uint8_t buttonIndex, unsigned long holdMs = 0);
+
+  // Debug: fake touch gestures from the serial console (CMD:TAP/LONG/SWIPE).
+  // Coordinates are normalized to the native panel frame (same space the
+  // touch controller reports); each event fires for exactly one update()
+  // frame through the same accessors real touches use, so every consumer —
+  // FreeInkUI hit rects, rowTouch grids, reader tap zones — sees them.
+  void injectTouchTap(float nx, float ny);
+  void injectTouchLongPress(float nx, float ny);
+  void injectSwipe(float nx1, float ny1, float nx2, float ny2);
 
   // Verify power button was held long enough after wakeup.
   // Returns true if verification succeeded, false if device should return to sleep.

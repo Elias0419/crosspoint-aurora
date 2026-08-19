@@ -49,6 +49,39 @@ void ContextMenuActivity::loop() {
     return;
   }
 
+  // Touch: tap a row to run it, tap outside the box to cancel. The grid
+  // mirrors render()'s box math.
+  {
+    int tx = 0;
+    int ty = 0;
+    if (mappedInput.wasScreenTapped(tx, ty)) {
+      const int screenW = renderer.getScreenWidth();
+      const int screenH = renderer.getScreenHeight();
+      const int titleLineHeight = renderer.getLineHeight(UI_10_FONT_ID);
+      const int itemLineHeight = renderer.getLineHeight(UI_12_FONT_ID);
+      const int rowHeight = itemLineHeight + kRowPadding * 2;
+      const int titleBlock = titleLineHeight + kBoxPadding;
+      const int boxW = screenW - kSideMargin * 2;
+      const int boxH = kBoxPadding + titleBlock + static_cast<int>(items.size()) * rowHeight + kBoxPadding;
+      const int boxX = (screenW - boxW) / 2;
+      const int boxY = (screenH - boxH) / 2;
+      if (tx < boxX || tx >= boxX + boxW || ty < boxY || ty >= boxY + boxH) {
+        ActivityResult res;
+        res.isCancelled = true;
+        setResult(std::move(res));
+        finish();
+        return;
+      }
+      const int itemsTop = boxY + kBoxPadding + titleBlock;
+      const int idx = ty >= itemsTop ? (ty - itemsTop) / rowHeight : -1;
+      if (idx >= 0 && idx < static_cast<int>(items.size())) {
+        setResult(MenuResult{items[idx].action});
+        finish();
+      }
+      return;
+    }
+  }
+
   const int itemCount = static_cast<int>(items.size());
   buttonNavigator.onNext([this, itemCount] {
     selectedIndex = ButtonNavigator::nextIndex(selectedIndex, itemCount);

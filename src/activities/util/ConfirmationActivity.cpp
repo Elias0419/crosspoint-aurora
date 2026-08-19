@@ -30,6 +30,12 @@ void ConfirmationActivity::onEnter() {
   if (!safeBody.empty()) totalHeight += lineHeight;
   if (!safeHeading.empty() && !safeBody.empty()) totalHeight += spacing;
 
+  // Touch boards get real Cancel/Confirm buttons in the dialog: the hint row
+  // that carries those actions on button boards is hidden under touch.
+  touchButtons = mappedInput.hasTouch();
+  const int btnRowH = touchButtons ? 48 + spacing : 0;
+  if (touchButtons) totalHeight += btnRowH;
+
   if (overlay) {
     boxW = renderer.getScreenWidth() - margin * 2;
     boxH = totalHeight + boxPadding * 2;
@@ -38,6 +44,17 @@ void ConfirmationActivity::onEnter() {
     startY = boxY + boxPadding;
   } else {
     startY = (renderer.getScreenHeight() - totalHeight) / 2;
+  }
+
+  if (touchButtons) {
+    btnH = 48;
+    const int rowW = overlay ? boxW - boxPadding * 2 : renderer.getScreenWidth() - margin * 2;
+    const int rowX = overlay ? boxX + boxPadding : margin;
+    const int gap = 16;
+    btnW = (rowW - gap) / 2;
+    cancelX = rowX;
+    confirmX = rowX + btnW + gap;
+    btnRowY = startY + totalHeight - btnH;
   }
 
   lockNextConfirmRelease = mappedInput.isPressed(MappedInputManager::Button::Confirm);
@@ -70,6 +87,19 @@ void ConfirmationActivity::render(RenderLock&& lock) {
     renderer.drawCenteredText(fontId, currentY, safeBody.c_str(), true, EpdFontFamily::REGULAR);
   }
 
+  // Touch boards: tappable Cancel (outlined) / Confirm (filled) buttons.
+  if (touchButtons) {
+    renderer.drawRoundedRect(cancelX, btnRowY, btnW, btnH, 2, 10, true);
+    renderer.fillRoundedRect(confirmX, btnRowY, btnW, btnH, 10, Color::Black);
+    const char* cancelLabel = I18N.get(StrId::STR_CANCEL);
+    const char* confirmLabel = I18N.get(StrId::STR_CONFIRM);
+    const int textY = btnRowY + (btnH - lineHeight) / 2;
+    const int cw = renderer.getTextWidth(fontId, cancelLabel, EpdFontFamily::BOLD);
+    renderer.drawText(fontId, cancelX + (btnW - cw) / 2, textY, cancelLabel, true, EpdFontFamily::BOLD);
+    const int fw = renderer.getTextWidth(fontId, confirmLabel, EpdFontFamily::BOLD);
+    renderer.drawText(fontId, confirmX + (btnW - fw) / 2, textY, confirmLabel, false, EpdFontFamily::BOLD);
+  }
+
   // In overlay mode, wipe the launching activity's bottom chrome (its button hints + path line)
   // first, otherwise those labels show through next to this dialog's own Cancel/Confirm hints.
   if (overlay) {
@@ -89,6 +119,35 @@ void ConfirmationActivity::render(RenderLock&& lock) {
 }
 
 void ConfirmationActivity::loop() {
+  // Touch: the on-screen buttons decide; outside the overlay box cancels.
+  if (touchButtons) {
+    int tx = 0;
+    int ty = 0;
+    if (mappedInput.wasScreenTapped(tx, ty)) {
+      const auto finishWith = [this](bool cancelled) {
+        ActivityResult res;
+        res.isCancelled = cancelled;
+        setResult(std::move(res));
+        finish();
+      };
+      if (ty >= btnRowY && ty < btnRowY + btnH) {
+        if (tx >= cancelX && tx < cancelX + btnW) {
+          finishWith(true);
+          return;
+        }
+        if (tx >= confirmX && tx < confirmX + btnW) {
+          finishWith(false);
+          return;
+        }
+      }
+      if (overlay && (tx < boxX || tx >= boxX + boxW || ty < boxY || ty >= boxY + boxH)) {
+        finishWith(true);
+        return;
+      }
+      return;  // taps elsewhere are consumed without deciding
+    }
+  }
+
   if (overlay) {
     // Overlay layout (btn1/btn2): confirm with the Confirm button, cancel with Back. The Left/Right
     // buttons are intentionally inert here. Swallow a Confirm release that carried over from the

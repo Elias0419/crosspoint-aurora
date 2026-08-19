@@ -54,6 +54,12 @@ class AuroraTheme : public BaseTheme {
                        const std::function<std::string(int)>& rowText,
                        const std::function<std::string(int)>& rowValue = nullptr) const override;
 
+  // Tap-target geometry mirroring drawHomeScreen / drawReaderToolbar /
+  // drawReaderPanel — keep in sync with those draw functions.
+  HomeHitLayout homeHitLayout(const GfxRenderer& renderer) const override;
+  ReaderToolbarHit readerToolbarHitAreas(const GfxRenderer& renderer) const override;
+  ReaderPanelHit readerPanelHitAreas(const GfxRenderer& renderer) const override;
+
   // Aurora restyle of the shared list/header primitives so every screen that uses
   // them (reader menu, TOC, file browser, recent books, ...) gets the Aurora look:
   // a status-bar style header and rounded light-gray selected rows.

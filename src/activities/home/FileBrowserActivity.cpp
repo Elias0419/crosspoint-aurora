@@ -458,6 +458,9 @@ bool FileBrowserActivity::handleCustomInput() {
   if (mode == Mode::Books && GUI.ownsHomeLayout() && HomeTabBar::handleLeftRight(mappedInput, HomeTabBar::Browse)) {
     return true;
   }
+  if (mode == Mode::Books && GUI.ownsHomeLayout() && HomeTabBar::handleTap(mappedInput, renderer, HomeTabBar::Browse)) {
+    return true;
+  }
 
   // Long press Confirm opens the context menu the moment the 1s threshold is reached, while
   // the button is still held (no need to release first). `contextMenuArmed` fires it once per

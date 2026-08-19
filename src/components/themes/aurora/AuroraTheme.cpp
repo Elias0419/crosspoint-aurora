@@ -836,3 +836,68 @@ void AuroraTheme::drawReaderPanel(GfxRenderer& renderer, Rect screen, const char
   drawList(renderer, Rect{X, contentTop, W, contentH}, itemCount, selectedIndex, rowText, nullptr, nullptr, rowValue,
            true);
 }
+
+HomeHitLayout AuroraTheme::homeHitLayout(const GfxRenderer& renderer) const {
+  // Mirrors drawHomeScreen: same constants, same content rect HomeActivity
+  // passes it ({0, 0, W, pageH - hintRow}).
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int contentH =
+      renderer.getScreenHeight() - (SETTINGS.showFrontButtonHints() ? metrics.buttonHintsHeight : 0);
+  HomeHitLayout hit;
+  const int dividerY = kStatusY + kDividerGap;
+  const int thumbY = dividerY + 12;
+  hit.featuredTop = thumbY - 6;
+  hit.featuredBottom = thumbY + kThumbHeight + 6;
+  const int libHeaderY = thumbY + kThumbHeight + kSectionGap;
+  const int underlineY = libHeaderY + renderer.getLineHeight(kSectionFontId) + 4;
+  hit.listTop = underlineY + 12;
+  hit.barTop = contentH - kBottomBarHeight;
+  hit.cardStride = kCardHeight + kCardGap;
+  hit.cardHeight = kCardHeight;
+  const int listHeight = std::max(0, hit.barTop - hit.listTop);
+  hit.pageItems = hit.cardStride > 0 ? std::max(1, (listHeight + kCardGap) / hit.cardStride) : 0;
+  hit.valid = true;
+  return hit;
+}
+
+ReaderToolbarHit AuroraTheme::readerToolbarHitAreas(const GfxRenderer& renderer) const {
+  // Mirrors drawReaderToolbar (screen = full logical screen).
+  const int W = renderer.getScreenWidth();
+  const int H = renderer.getScreenHeight();
+  ReaderToolbarHit hit;
+  const int topH = 50;
+  hit.topBar = Rect{0, 0, W, topH};
+  const int bottomH = 160;
+  const int by = H - bottomH;
+  hit.bottomTop = by;
+  const int btn = 34;
+  const int sy = by + 16;
+  // Pad the 34px scrub buttons out to finger size; the row is otherwise empty.
+  const int slop = 10;
+  hit.prevBtn = Rect{16 - slop, sy - slop, btn + 2 * slop, btn + 2 * slop};
+  hit.nextBtn = Rect{W - 16 - btn - slop, sy - slop, btn + 2 * slop, btn + 2 * slop};
+  const int trackX0 = 16 + btn + 14;
+  const int trackX1 = W - 16 - btn - 14;
+  hit.track = Rect{trackX0, sy - slop, trackX1 - trackX0, btn + 2 * slop};
+  const int ty = by + 90;
+  const int slotW = W / 3;
+  for (int i = 0; i < 3; ++i) hit.tools[i] = Rect{slotW * i, ty, slotW, H - ty};
+  hit.valid = true;
+  return hit;
+}
+
+ReaderPanelHit AuroraTheme::readerPanelHitAreas(const GfxRenderer& renderer) const {
+  // Mirrors drawReaderPanel + the drawList row grid it delegates to.
+  const int H = renderer.getScreenHeight();
+  ReaderPanelHit hit;
+  hit.panelTop = (H * 38) / 100;
+  const int titleY = hit.panelTop + 14;
+  const int dividerY = titleY + renderer.getLineHeight(kTitleFontId) + 8;
+  hit.listTop = dividerY + 10;
+  hit.rowHeight = AuroraMetrics::values.listRowHeight;
+  const int hintReserve = 44;
+  const int contentH = H - hit.listTop - hintReserve;
+  hit.pageItems = hit.rowHeight > 0 ? contentH / hit.rowHeight : 0;
+  hit.valid = hit.pageItems > 0;
+  return hit;
+}

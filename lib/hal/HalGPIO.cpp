@@ -160,6 +160,10 @@ void HalGPIO::update() {
     injectPressEdge = true;
   }
 
+  // Injected touch gestures fire for exactly one update() frame.
+  activeTouch = pendingTouch;
+  pendingTouch = InjectTouch::None;
+
   const bool connected = isUsbConnected();
   usbStateChanged = (connected != lastUsbConnected);
   lastUsbConnected = connected;
@@ -168,6 +172,26 @@ void HalGPIO::update() {
 void HalGPIO::injectButton(uint8_t buttonIndex, unsigned long holdMs) {
   pendingInjectButton = buttonIndex;
   pendingInjectHoldMs = holdMs;
+}
+
+void HalGPIO::injectTouchTap(float nx, float ny) {
+  pendingTouch = InjectTouch::Tap;
+  injTouchX1 = nx;
+  injTouchY1 = ny;
+}
+
+void HalGPIO::injectTouchLongPress(float nx, float ny) {
+  pendingTouch = InjectTouch::LongPress;
+  injTouchX1 = nx;
+  injTouchY1 = ny;
+}
+
+void HalGPIO::injectSwipe(float nx1, float ny1, float nx2, float ny2) {
+  pendingTouch = InjectTouch::Swipe;
+  injTouchX1 = nx1;
+  injTouchY1 = ny1;
+  injTouchX2 = nx2;
+  injTouchY2 = ny2;
 }
 
 bool HalGPIO::wasUsbStateChanged() const { return usbStateChanged; }
@@ -205,11 +229,21 @@ bool HalGPIO::wasHomeKeyTapped() const { return inputMgr.wasHomeKeyTapped(); }
 
 bool HalGPIO::wasHomeKeyLongPressed() const { return inputMgr.wasHomeKeyLongPressed(); }
 
-bool HalGPIO::wasTouchTap(float& nx, float& ny) const { return inputMgr.wasTouchTap(nx, ny); }
+bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
+  if (activeTouch == InjectTouch::Tap) {
+    nx = injTouchX1;
+    ny = injTouchY1;
+    return true;
+  }
+  return inputMgr.wasTouchTap(nx, ny);
+}
 
 bool HalGPIO::wasTouchDown(float& nx, float& ny) const { return inputMgr.wasTouchPressedAt(nx, ny); }
 
-bool HalGPIO::wasTouchReleased() const { return inputMgr.wasTouchReleased(); }
+bool HalGPIO::wasTouchReleased() const {
+  // An injected tap is a full contact: report its release edge too.
+  return inputMgr.wasTouchReleased() || activeTouch == InjectTouch::Tap;
+}
 
 bool HalGPIO::isTouchTapCandidate(float& nx, float& ny, unsigned long& heldMs) const {
   return inputMgr.isTouchTapCandidate(nx, ny, heldMs);
@@ -219,17 +253,33 @@ bool HalGPIO::isPowerButtonPhysicallyPressed() const { return digitalRead(InputM
 
 bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return inputMgr.isTouchHeldAt(nx, ny); }
 
-bool HalGPIO::wasTouchLongPress(float& nx, float& ny) const { return inputMgr.wasTouchLongPress(nx, ny); }
+bool HalGPIO::wasTouchLongPress(float& nx, float& ny) const {
+  if (activeTouch == InjectTouch::LongPress) {
+    nx = injTouchX1;
+    ny = injTouchY1;
+    return true;
+  }
+  return inputMgr.wasTouchLongPress(nx, ny);
+}
 
 void HalGPIO::suppressTouchContact() { inputMgr.suppressTouchContact(); }
 
 unsigned long HalGPIO::lastTouchHeldMs() const { return inputMgr.lastTouchHeldMs(); }
 
 bool HalGPIO::wasSwipe(float& nxStart, float& nyStart, float& nxEnd, float& nyEnd) const {
+  if (activeTouch == InjectTouch::Swipe) {
+    nxStart = injTouchX1;
+    nyStart = injTouchY1;
+    nxEnd = injTouchX2;
+    nyEnd = injTouchY2;
+    return true;
+  }
   return inputMgr.wasSwipe(nxStart, nyStart, nxEnd, nyEnd);
 }
 
-bool HalGPIO::wasTouchActivity() const { return inputMgr.wasTouchActivity(); }
+bool HalGPIO::wasTouchActivity() const {
+  return inputMgr.wasTouchActivity() || activeTouch != InjectTouch::None;
+}
 
 void HalGPIO::setSharedConfirmPowerShortPressEmitsPower(const bool enabled) {
   InputManager::setSharedConfirmPowerShortPressEmitsPower(enabled);

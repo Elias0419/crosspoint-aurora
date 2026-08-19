@@ -29,6 +29,30 @@ bool HomeTabBar::handleLeftRight(MappedInputManager& input, int currentTab) {
   return false;
 }
 
+int HomeTabBar::hitTest(const GfxRenderer& renderer, int x, int y) {
+  const int barH = GUI.bottomBarHeight();
+  if (barH <= 0) return -1;
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int hintH = SETTINGS.showFrontButtonHints() ? metrics.buttonHintsHeight : 0;
+  const int pageW = renderer.getScreenWidth();
+  const int barTop = renderer.getScreenHeight() - hintH - barH;
+  if (y < barTop || y >= barTop + barH || x < 0) return -1;
+  const int slotW = pageW / kCount;
+  if (slotW <= 0) return -1;
+  const int idx = x / slotW;
+  return idx < kCount ? idx : kCount - 1;
+}
+
+bool HomeTabBar::handleTap(MappedInputManager& input, const GfxRenderer& renderer, int currentTab) {
+  int x = 0;
+  int y = 0;
+  if (!input.wasScreenTapped(x, y)) return false;
+  const int idx = hitTest(renderer, x, y);
+  if (idx < 0) return false;
+  if (idx != currentTab) activityManager.goToHomeTab(idx);
+  return true;  // a tap on the bar is consumed either way
+}
+
 void HomeTabBar::draw(GfxRenderer& renderer, int pageWidth, int pageHeight, int activeTab) {
   const int barH = GUI.bottomBarHeight();
   if (barH <= 0) return;  // theme without a persistent bar

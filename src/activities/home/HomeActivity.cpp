@@ -191,6 +191,48 @@ void HomeActivity::loop() {
     // Home is top-level: Back is inactive here (and hidden in the hints, like Lyra).
     // Left/Right switch bottom-bar tabs (Library is the current tab).
     if (HomeTabBar::handleLeftRight(mappedInput, HomeTabBar::Library)) return;
+    if (HomeTabBar::handleTap(mappedInput, renderer, HomeTabBar::Library)) return;
+
+    // Touch: tap the featured card or a library card to open that book; swipe
+    // up/down pages the library list. Geometry mirrors AuroraTheme's draw.
+    const auto hit = GUI.homeHitLayout(renderer);
+    if (hit.valid) {
+      int tx = 0;
+      int ty = 0;
+      if (mappedInput.wasScreenTapped(tx, ty) && ty < hit.barTop) {
+        if (listCount > 0 && ty >= hit.featuredTop && ty < hit.featuredBottom) {
+          onSelectBook(recentBooks[0].path);
+          return;
+        }
+        // Library cards list books [1..): tapped slot -> the page currently on
+        // screen, which is derived from the selection the same way the theme
+        // pages the list it draws.
+        const int libCount = listCount - 1;
+        if (libCount > 0 && hit.pageItems > 0 && ty >= hit.listTop) {
+          const int slot = (ty - hit.listTop) / hit.cardStride;
+          const bool onCard = (ty - hit.listTop) % hit.cardStride < hit.cardHeight;
+          const int librarySelected = homeListIndex >= 1 ? homeListIndex - 1 : 0;
+          const int pageStart = librarySelected / hit.pageItems * hit.pageItems;
+          const int i = pageStart + slot;
+          if (onCard && slot >= 0 && slot < hit.pageItems && i < libCount) {
+            homeListIndex = 1 + i;
+            onSelectBook(recentBooks[homeListIndex].path);
+            return;
+          }
+        }
+      }
+      const auto swipe = mappedInput.wasSwipe();
+      if (listCount > 0 && hit.pageItems > 0 &&
+          (swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down)) {
+        const int step = swipe == MappedInputManager::SwipeDir::Up ? hit.pageItems : -hit.pageItems;
+        const int next = std::clamp(homeListIndex + step, 0, listCount - 1);
+        if (next != homeListIndex) {
+          homeListIndex = next;
+          requestUpdate();
+        }
+        return;
+      }
+    }
 
     buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Up}, [this, listCount] {
       if (listCount > 0) homeListIndex = ButtonNavigator::previousIndex(homeListIndex, listCount);

@@ -33,6 +33,14 @@ class ConfirmationActivity : public Activity {
   int boxY = 0;
   int boxW = 0;
   int boxH = 0;
+  // On-screen Cancel/Confirm buttons for touch boards (the hint pills that
+  // normally carry these actions are hidden there). Computed in onEnter().
+  bool touchButtons = false;
+  int btnRowY = 0;
+  int btnW = 0;
+  int btnH = 0;
+  int cancelX = 0;
+  int confirmX = 0;
 
  public:
   ConfirmationActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const std::string& heading,

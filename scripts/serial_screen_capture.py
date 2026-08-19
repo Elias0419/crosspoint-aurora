@@ -98,6 +98,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="COM10")
     ap.add_argument("--key", action="append", default=[], help="NAME[:holdMs], e.g. DOWN or CONFIRM:600")
+    ap.add_argument("--tap", action="append", default=[], help="x:y tap in logical (screenshot) coords")
+    ap.add_argument("--long", dest="longpress", action="append", default=[], help="x:y long-press in logical coords")
+    ap.add_argument("--swipe", action="append", default=[], help="x1:y1:x2:y2 swipe in logical coords")
     ap.add_argument("--keydelay", type=float, default=1.2, help="seconds between keys")
     ap.add_argument("--settle", type=float, default=2.0, help="seconds to wait before capture")
     ap.add_argument("--out", default=None, help="output PNG path; omit to skip capture")
@@ -115,10 +118,14 @@ def main() -> int:
                     print(line.decode("utf-8", errors="replace").rstrip())
             return 0
 
-        for key in args.key:
-            ser.write(f"CMD:KEY:{key}\n".encode())
+        actions = [("KEY", k) for k in args.key]
+        actions += [("TAP", t) for t in args.tap]
+        actions += [("LONG", t) for t in args.longpress]
+        actions += [("SWIPE", t) for t in args.swipe]
+        for kind, key in actions:
+            ser.write(f"CMD:{kind}:{key}\n".encode())
             ser.flush()
-            print(f"sent KEY:{key}")
+            print(f"sent {kind}:{key}")
             # surface the ack if it shows up quickly
             t0 = time.time()
             while time.time() - t0 < 1.0:
@@ -127,10 +134,10 @@ def main() -> int:
                     break
                 text = line.decode("utf-8", errors="replace").strip()
                 print(f"  [log] {text}")
-                if text.startswith("KEY_OK") or text.startswith("KEY_ERR"):
+                if text.startswith(("KEY_OK", "KEY_ERR", "TOUCH_OK", "TOUCH_ERR")):
                     break
             hold_extra = 0.0
-            if ":" in key:
+            if kind == "KEY" and ":" in key:
                 try:
                     hold_extra = int(key.split(":")[1]) / 1000.0
                 except ValueError:

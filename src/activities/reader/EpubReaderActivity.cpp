@@ -1767,6 +1767,56 @@ void EpubReaderActivity::handleOverlayInput() {
 
   // --- Toolbar ---
   if (overlay == Overlay::Toolbar) {
+    // Touch mirrors the button paths: tap a tool to open its panel, the scrub
+    // buttons/track to move between chapters, anywhere else (page or top bar,
+    // where the back chevron sits) to dismiss.
+    const auto hit = GUI.readerToolbarHitAreas(renderer);
+    int tx = 0;
+    int ty = 0;
+    if (hit.valid && mappedInput.wasScreenTapped(tx, ty)) {
+      const auto in = [&](const Rect& r) {
+        return tx >= r.x && tx < r.x + r.width && ty >= r.y && ty < r.y + r.height;
+      };
+      const auto gotoSpine = [&](int target) {
+        const int spineCount = epub->getSpineItemsCount();
+        target = std::clamp(target, 0, spineCount - 1);
+        if (target != currentSpineIndex) {
+          RenderLock lock(*this);
+          nextPageNumber = 0;
+          currentSpineIndex = target;
+          section.reset();
+        }
+        requestUpdate();
+      };
+      for (int i = 0; i < 3; ++i) {
+        if (in(hit.tools[i])) {
+          focusedTool = i;
+          openOverlay(i == 0 ? Overlay::Contents : (i == 1 ? Overlay::Text : Overlay::More));
+          return;
+        }
+      }
+      if (in(hit.prevBtn)) {
+        gotoSpine(currentSpineIndex - 1);
+        return;
+      }
+      if (in(hit.nextBtn)) {
+        gotoSpine(currentSpineIndex + 1);
+        return;
+      }
+      if (in(hit.track)) {
+        const float frac =
+            hit.track.width > 1 ? static_cast<float>(tx - hit.track.x) / static_cast<float>(hit.track.width - 1) : 0.0f;
+        gotoSpine(static_cast<int>(frac * (epub->getSpineItemsCount() - 1) + 0.5f));
+        return;
+      }
+      if (ty < hit.bottomTop) {
+        overlay = Overlay::None;
+        requestUpdate();  // redraw the clean page
+        return;
+      }
+      return;  // tap on the bottom bar's dead space: consumed, no action
+    }
+
     if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
       overlay = Overlay::None;
       requestUpdate();  // redraw the clean page
@@ -1809,19 +1859,9 @@ void EpubReaderActivity::handleOverlayInput() {
                     : overlay == Overlay::Text   ? kTextRowCount
                                                  : static_cast<int>(moreActions.size());
 
-  // Back steps up to the toolbar (Text persists + re-paginates first).
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-    if (overlay == Overlay::Text) {
-      applyReaderTextSettings();
-    }
-    overlay = Overlay::Toolbar;
-    requestUpdate();
-    return;
-  }
-
-  // Select activates the highlighted row: change a value / jump to a chapter /
-  // run an action. (Up/Down/Left/Right only move the selection — see below.)
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+  // Activate the highlighted row: change a value / jump to a chapter / run an
+  // action. Shared by the Confirm button and a row tap.
+  const auto activateRow = [this, &fastRedraw] {
     if (overlay == Overlay::Text) {
       if (panelIndex == 0) {
         openTextFontPicker();  // full font list, same as Settings
@@ -1844,6 +1884,58 @@ void EpubReaderActivity::handleOverlayInput() {
     } else if (overlay == Overlay::More) {
       activateMoreRow(panelIndex);
     }
+  };
+
+  // Steps up to the toolbar (Text persists + re-paginates first) — the Back
+  // button and a tap on the page above the sheet.
+  const auto dismissPanel = [this] {
+    if (overlay == Overlay::Text) {
+      applyReaderTextSettings();
+    }
+    overlay = Overlay::Toolbar;
+    requestUpdate();
+  };
+
+  // Touch: tap a row to activate it, tap the visible page above the sheet to
+  // step back to the toolbar, swipe up/down to page long lists.
+  const auto hit = GUI.readerPanelHitAreas(renderer);
+  if (hit.valid) {
+    int tx = 0;
+    int ty = 0;
+    if (mappedInput.wasScreenTapped(tx, ty)) {
+      if (ty < hit.panelTop) {
+        dismissPanel();
+        return;
+      }
+      if (count > 0 && ty >= hit.listTop && hit.rowHeight > 0 && hit.pageItems > 0) {
+        const int slot = (ty - hit.listTop) / hit.rowHeight;
+        const int pageStart = (panelIndex >= 0 ? panelIndex : 0) / hit.pageItems * hit.pageItems;
+        const int i = pageStart + slot;
+        if (slot >= 0 && slot < hit.pageItems && i < count) {
+          panelIndex = i;
+          activateRow();
+          return;
+        }
+      }
+      return;  // tap on the sheet's title/dead space: consumed, no action
+    }
+    const auto swipe = mappedInput.wasSwipe();
+    if (count > 0 && hit.pageItems > 0 &&
+        (swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down)) {
+      const int step = swipe == MappedInputManager::SwipeDir::Up ? hit.pageItems : -hit.pageItems;
+      panelIndex = std::clamp(panelIndex + step, 0, count - 1);
+      fastRedraw();
+      return;
+    }
+  }
+
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    dismissPanel();
+    return;
+  }
+
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    activateRow();
     return;
   }
 

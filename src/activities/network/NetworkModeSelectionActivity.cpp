@@ -44,7 +44,9 @@ const char* NetworkModeSelectionActivity::headerTitle() const {
 bool NetworkModeSelectionActivity::handleCustomInput() {
   // Aurora: this is the Transfer tab's landing screen, so front Left/Right walk
   // the bottom bar (the base's list navigation keeps the side Up/Down buttons).
-  return GUI.ownsHomeLayout() && HomeTabBar::handleLeftRight(mappedInput, HomeTabBar::Transfer);
+  if (!GUI.ownsHomeLayout()) return false;
+  return HomeTabBar::handleLeftRight(mappedInput, HomeTabBar::Transfer) ||
+         HomeTabBar::handleTap(mappedInput, renderer, HomeTabBar::Transfer);
 }
 
 // The front Left/Right pair belongs to the bottom bar in tab mode, so only the side

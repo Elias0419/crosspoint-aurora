@@ -49,6 +49,42 @@ struct ReaderToolbarInfo {
   bool focusReadingOn = false;
 };
 
+// Tap-target geometry for theme-owned screens. The themes that own a layout
+// (Aurora) draw it outside FreeInkUI, so there are no registered hit rects;
+// these structs mirror the draw math so activities can hit-test taps. Every
+// rect is in logical screen coordinates. `valid` stays false on themes that
+// don't own the corresponding layout.
+struct HomeHitLayout {
+  int featuredTop = 0;  // y-band of the Continue Reading card (full width)
+  int featuredBottom = 0;
+  int listTop = 0;  // first library card row
+  int cardStride = 0;
+  int cardHeight = 0;
+  int pageItems = 0;  // library cards per page
+  int barTop = 0;     // bottom tab bar top edge
+  bool valid = false;
+};
+
+struct ReaderToolbarHit {
+  // Rect's constructor is explicit, so spell the member defaults out (a bare
+  // {} would be copy-list-initialization, which explicit forbids).
+  Rect topBar = Rect();   // tap = dismiss (the back chevron lives here)
+  Rect prevBtn = Rect();  // scrub row: previous chapter
+  Rect nextBtn = Rect();  // scrub row: next chapter
+  Rect track = Rect();    // scrub row: progress track (tap = jump to fraction)
+  Rect tools[3] = {Rect(), Rect(), Rect()};  // Contents / Text / More
+  int bottomTop = 0;  // bottom bar top edge; taps between topBar and here dismiss
+  bool valid = false;
+};
+
+struct ReaderPanelHit {
+  int panelTop = 0;  // bottom-sheet top edge; taps above dismiss to the toolbar
+  int listTop = 0;   // first row y
+  int rowHeight = 0;
+  int pageItems = 0;
+  bool valid = false;
+};
+
 struct ThemeMetrics {
   int batteryWidth;
   int batteryHeight;
@@ -330,6 +366,12 @@ class BaseTheme {
   virtual void drawReaderPanel(GfxRenderer&, Rect /*screen*/, const char* /*title*/, int /*itemCount*/,
                                int /*selectedIndex*/, const std::function<std::string(int)>& /*rowText*/,
                                const std::function<std::string(int)>& /*rowValue*/ = nullptr) const {}
+  // Tap-target geometry mirroring the theme-owned layouts above (see the
+  // structs' comments). Themes that own the layout must keep these in sync
+  // with their draw functions.
+  virtual HomeHitLayout homeHitLayout(const GfxRenderer&) const { return {}; }
+  virtual ReaderToolbarHit readerToolbarHitAreas(const GfxRenderer&) const { return {}; }
+  virtual ReaderPanelHit readerPanelHitAreas(const GfxRenderer&) const { return {}; }
   virtual void drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount, int selectedIndex,
                               const std::function<std::string(int index)>& buttonLabel,
                               const std::function<UIIcon(int index)>& rowIcon) const;

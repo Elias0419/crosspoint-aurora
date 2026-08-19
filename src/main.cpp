@@ -691,6 +691,64 @@ void loop() {
         } else {
           logSerial.printf("KEY_ERR:%s\n", name.c_str());
         }
+      } else if (cmd.startsWith("TAP:") || cmd.startsWith("LONG:") || cmd.startsWith("SWIPE:")) {
+        // CMD:TAP:x:y / CMD:LONG:x:y / CMD:SWIPE:x1:y1:x2:y2 — coordinates in
+        // the LOGICAL frame (what a screenshot of the current orientation
+        // shows). Inverse of GfxRenderer::tapToLogical back to the normalized
+        // native-panel space the touch controller reports in.
+        const int pW = renderer.getDisplayWidth();
+        const int pH = renderer.getDisplayHeight();
+        auto toNorm = [&](int lx, int ly, float& nx, float& ny) {
+          int phyX = 0, phyY = 0;
+          switch (renderer.getOrientation()) {
+            case GfxRenderer::Orientation::Portrait:
+              phyX = ly;
+              phyY = pH - 1 - lx;
+              break;
+            case GfxRenderer::Orientation::PortraitInverted:
+              phyX = pW - 1 - ly;
+              phyY = lx;
+              break;
+            case GfxRenderer::Orientation::LandscapeClockwise:
+              phyX = pW - 1 - lx;
+              phyY = pH - 1 - ly;
+              break;
+            case GfxRenderer::Orientation::LandscapeCounterClockwise:
+            default:
+              phyX = lx;
+              phyY = ly;
+              break;
+          }
+          nx = (phyX + 0.5f) / pW;
+          ny = (phyY + 0.5f) / pH;
+        };
+        int v[4] = {0, 0, 0, 0};
+        int nVals = 0;
+        {
+          String rest = cmd.substring(cmd.indexOf(':') + 1);
+          while (nVals < 4 && rest.length() > 0) {
+            const int colon = rest.indexOf(':');
+            v[nVals++] = (colon >= 0 ? rest.substring(0, colon) : rest).toInt();
+            if (colon < 0) break;
+            rest = rest.substring(colon + 1);
+          }
+        }
+        float nx1, ny1;
+        toNorm(v[0], v[1], nx1, ny1);
+        if (cmd.startsWith("SWIPE:") && nVals == 4) {
+          float nx2, ny2;
+          toNorm(v[2], v[3], nx2, ny2);
+          gpio.injectSwipe(nx1, ny1, nx2, ny2);
+          logSerial.printf("TOUCH_OK:SWIPE:%d:%d:%d:%d\n", v[0], v[1], v[2], v[3]);
+        } else if (cmd.startsWith("LONG:") && nVals == 2) {
+          gpio.injectTouchLongPress(nx1, ny1);
+          logSerial.printf("TOUCH_OK:LONG:%d:%d\n", v[0], v[1]);
+        } else if (cmd.startsWith("TAP:") && nVals == 2) {
+          gpio.injectTouchTap(nx1, ny1);
+          logSerial.printf("TOUCH_OK:TAP:%d:%d\n", v[0], v[1]);
+        } else {
+          logSerial.printf("TOUCH_ERR:%s\n", cmd.c_str());
+        }
       }
     }
   }
