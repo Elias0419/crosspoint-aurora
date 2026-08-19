@@ -8,8 +8,9 @@
 // or a button bound to "Control Center" (iOS Control Center style): a grabber,
 // the frontlight brightness/warmth sliders (on boards with a light), and a grid
 // of quick-setting tiles — night mode, ghost-cleanup refresh, reading
-// orientation, the touch kill-switch, a screenshot, and sleep. Pure 1-bit: no
-// dithered fills, selection reads as a filled tile.
+// orientation, the touch kill-switch, the frontlight, and sleep. Pure 1-bit: no
+// dithered fills, selection reads as a filled tile. The grabber sits along the
+// panel's bottom edge, the edge the sheet is dragged from.
 class FrontlightPanelActivity final : public Activity, private UiAppHost {
   ButtonNavigator buttonNavigator;
 
@@ -37,8 +38,9 @@ class FrontlightPanelActivity final : public Activity, private UiAppHost {
   static void onTileEvent(const freeink::ui::ActionEvent& event, void* user);
 
   void buildPanelScreen(UiScreen& screen);
-  // One slider row: label + value above a pill-shaped 1-bit track with a
-  // draggable knob and tap-to-step ends.
+  // One slider row: a caption line (name + live percentage) above
+  // [-] [draggable 1-bit capsule] [+], plus a lamp on/off button after the +
+  // when showToggle is set (the brightness row).
   void addSliderRow(UiScreen& screen, const char* label, uint8_t value, freeink::ui::ActionId sliderAction,
                     freeink::ui::ActionId stepAction, bool showToggle);
   int computePanelBottom() const;
@@ -53,9 +55,6 @@ class FrontlightPanelActivity final : public Activity, private UiAppHost {
   // One-shot: the "refresh" tile re-drives the whole frame with the
   // ghost-cleanup waveform on the next render.
   bool cleanRefreshPending = false;
-  // One-shot: a tile that changed the panel's own look (night mode) needs the
-  // clean waveform too, and a screenshot must be taken after the repaint.
-  bool screenshotPending = false;
 
  public:
   explicit FrontlightPanelActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);

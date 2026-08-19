@@ -6,6 +6,7 @@
 #include <HalGPIO.h>
 #include <I18n.h>
 
+#include <algorithm>
 #include <cstdio>
 
 #include "CrossPointSettings.h"
@@ -45,6 +46,25 @@ uint8_t percentFromPermille(const int16_t permille) {
   if (value < 0) value = 0;
   if (value > 100) value = 100;
   return static_cast<uint8_t>(value);
+}
+
+// Slider step buttons: same outlined-card language as the tiles, inverted while
+// pressed so a tap is visibly acknowledged on a slow panel.
+fui::StyleSet stepStyles() {
+  fui::StyleSet s;
+  s.explicitlySet = true;
+  s.normal.background = fui::Paint::solid(fui::Color::White);
+  s.normal.foreground = fui::Paint::solid(fui::Color::Black);
+  s.normal.border = fui::Paint::solid(fui::Color::Black);
+  s.normal.borderWidth = 2;
+  s.normal.radius = kTileRadius;
+  s.selected = s.normal;
+  s.focused = s.normal;
+  s.active = s.normal;
+  s.active.background = fui::Paint::solid(fui::Color::Black);
+  s.active.foreground = fui::Paint::solid(fui::Color::White);
+  s.disabled = s.normal;
+  return s;
 }
 
 // 1-bit tile styling: an outlined card, filled solid black when the setting it
@@ -167,10 +187,11 @@ void FrontlightPanelActivity::runTile(const int idx) {
       gpio.setTouchEnabled(!gpio.touchEnabled());
       requestUpdate();
       break;
-    case 4:  // Screenshot of whatever is behind the panel
-      screenshotPending = true;
-      close();
+    case 4: {  // Screenshot of what is on screen (panel included) to the SD card
+      RenderLock lock;
+      ScreenshotUtil::takeScreenshot(renderer);
       break;
+    }
     case 5:  // Sleep now
       SETTINGS.saveToFile();
       enterDeepSleep(false);
@@ -255,18 +276,17 @@ void FrontlightPanelActivity::loop() {
 int FrontlightPanelActivity::computePanelBottom() const {
   const auto tokens = uiThemeTokens(uiTarget);
   const int16_t lineHeight = uiTarget.lineHeight(tokens.smallText.font);
-  int y = tokens.spaceLg;                // top padding above the grabber
-  y += kGrabberHeight + tokens.spaceLg;  // grabber + air
+  int y = tokens.spaceLg + tokens.spaceMd;  // top padding
   if (Frontlight.present()) {
-    y += lineHeight + tokens.spaceXs + kSliderRowHeight + tokens.spaceMd;  // brightness
+    y += lineHeight + tokens.spaceMd + kSliderRowHeight + tokens.spaceMd;  // brightness
     if (Frontlight.hasColorTemperature()) {
-      y += lineHeight + tokens.spaceXs + kSliderRowHeight + tokens.spaceMd;  // warmth
+      y += lineHeight + tokens.spaceMd + kSliderRowHeight + tokens.spaceMd;  // warmth
     }
     y += tokens.spaceSm;
   }
   const int rows = (kTileCount + kTileCols - 1) / kTileCols;
   y += rows * kTileHeight + (rows - 1) * kTileGap;
-  y += tokens.spaceLg;
+  y += tokens.spaceMd + kGrabberHeight + tokens.spaceLg;  // grabber band + air
   return y;
 }
 
@@ -281,8 +301,10 @@ void FrontlightPanelActivity::addSliderRow(UiScreen& screen, const char* label, 
   const fui::Insets side{0, kPanelSideMargin, 0, kPanelSideMargin};
   const int16_t lineHeight = screen.target().lineHeight(theme.smallText.font);
 
-  // Caption line: name on the left, live percentage on the right.
-  const fui::Rect caption = screen.takeTop(lineHeight, theme.spaceXs).inset(side);
+  // Caption line: name on the left, live percentage on the right. spaceMd below
+  // it, not spaceXs: Vietnamese descenders (the dot under "Độ") reached into the
+  // pill's outline at the tighter gap.
+  const fui::Rect caption = screen.takeTop(lineHeight, theme.spaceMd).inset(side);
   fui::TextStyle nameStyle = theme.smallText;
   nameStyle.bold = true;
   screen.target().text(caption, label, nameStyle);
@@ -292,47 +314,80 @@ void FrontlightPanelActivity::addSliderRow(UiScreen& screen, const char* label, 
   pctStyle.align = fui::TextAlign::Right;
   screen.target().text(caption, pct, pctStyle);
 
-  // The pill. An on/off sun control rides at its right end on the brightness
-  // row, so the light can be killed without dragging to zero.
-  fui::Rect row = screen.takeTop(kSliderRowHeight, theme.spaceMd).inset(side);
+  // [-] [=== pill ===] [+] (and a lamp toggle after the + on the brightness
+  // row): explicit step buttons, because a drag on the etched matte glass is
+  // unreliable and a hidden tap zone is worse than no zone at all. The pill
+  // itself stays draggable / tap-to-jump.
+  const fui::Rect band = screen.takeTop(kSliderRowHeight, theme.spaceMd).inset(side);
+  const int16_t stepW = kSliderRowHeight;  // square, finger-sized
+  const auto stepButton = [&](const int16_t x, const char* glyph, const int16_t delta) {
+    const fui::Rect rect{x, band.y, stepW, kSliderRowHeight};
+    fui::ButtonProps props;
+    props.label = glyph;
+    props.action = stepAction;
+    props.value = delta;
+    props.inputMask = fui::InputTouch;
+    // Title weight: a body-size "-" is a hairline inside a 56px button.
+    props.text = theme.titleText;
+    props.text.bold = true;
+    props.styles = stepStyles();
+    screen.button(props, rect);
+  };
+
+  int16_t bandRight = band.right();
   if (showToggle) {
+    // Lamp on/off, at the far right of the row: the sliders set the level, this
+    // kills the light outright. Filled glyph = on, outline = off.
+    const fui::Rect toggle{static_cast<int16_t>(bandRight - stepW), band.y, stepW, kSliderRowHeight};
     const fui::BitmapRef sunIcon = fui::bitmapFromIcon(lightOn ? icon_sun_filled_32 : icon_sun_32);
     const int16_t iconW = static_cast<int16_t>(sunIcon.width);
     const int16_t iconH = static_cast<int16_t>(sunIcon.height);
-    const int16_t hit = static_cast<int16_t>(kSliderRowHeight);
-    const fui::Rect toggle{static_cast<int16_t>(row.right() - hit), row.y, hit, hit};
-    screen.frame().hit(toggle, ACTION_TOGGLE);
+    screen.frame().hit(toggle, ACTION_TOGGLE, 0, fui::InputTouch);
     screen.target().stroke(toggle, fui::Paint::solid(fui::Color::Black), 2, kTileRadius);
-    screen.target().bitmap(fui::Rect{static_cast<int16_t>(toggle.x + (hit - iconW) / 2),
-                                     static_cast<int16_t>(toggle.y + (hit - iconH) / 2), iconW, iconH},
+    screen.target().bitmap(fui::Rect{static_cast<int16_t>(toggle.x + (stepW - iconW) / 2),
+                                     static_cast<int16_t>(toggle.y + (kSliderRowHeight - iconH) / 2), iconW, iconH},
                            sunIcon, fui::BitmapMode::Center);
-    row = fui::Rect{row.x, row.y, static_cast<int16_t>(row.width - hit - theme.spaceMd), row.height};
+    bandRight = static_cast<int16_t>(bandRight - stepW - theme.spaceMd);
   }
 
-  // 1-bit pill: white track, solid black fill for the set portion, and a 2px
-  // outline drawn last so the empty end of the track still reads as a control.
-  fui::SliderProps props;
-  props.value = value;
-  props.max = 100;
-  props.action = sliderAction;
-  props.inputMask = fui::InputTouch | fui::InputDrag;
-  props.track = fui::Paint::solid(fui::Color::White);
-  props.fill = fui::Paint::solid(fui::Color::Black);
-  props.knob = fui::Paint::solid(fui::Color::Black);
-  props.trackHeight = kSliderRowHeight;
-  props.knobWidth = 8;
-  props.knobHeight = kSliderRowHeight;
-  props.radius = kSliderTrackRadius;
-  props.horizontalPadding = 0;
-  fui::slider(screen.frame(), row, props);
-  screen.target().stroke(row, fui::Paint::solid(fui::Color::Black), 2, kSliderTrackRadius);
+  stepButton(band.x, "-", -BUTTON_BRIGHTNESS_STEP);
+  const int16_t plusX = static_cast<int16_t>(bandRight - stepW);
+  stepButton(plusX, "+", BUTTON_BRIGHTNESS_STEP);
+  // The pill spans the gap between the two step buttons.
+  const int16_t rowX = static_cast<int16_t>(band.x + stepW + theme.spaceMd);
+  const fui::Rect row{rowX, band.y, static_cast<int16_t>(plusX - theme.spaceMd - rowX), kSliderRowHeight};
 
-  // Tap the outer thirds of the pill to step without dragging (the matte glass
-  // makes precise drags hard); the middle stays a drag/jump zone.
-  const int16_t third = static_cast<int16_t>(row.width / 3);
-  screen.frame().hit(fui::Rect{row.x, row.y, third, row.height}, stepAction, -BUTTON_BRIGHTNESS_STEP, fui::InputTouch);
-  screen.frame().hit(fui::Rect{static_cast<int16_t>(row.right() - third), row.y, third, row.height}, stepAction,
-                     BUTTON_BRIGHTNESS_STEP, fui::InputTouch);
+  // 1-bit capsule, drawn here rather than through fui::slider: that component
+  // pairs a square-cornered progress fill with a separate knob, which on a
+  // capsule this tall broke the outline at the left end and put a black knob
+  // inside a black fill (invisible, with a notch where the two met). A plain
+  // filled capsule is the iOS brightness control anyway — the fill edge IS the
+  // handle. Drag still works identically: dragPermille comes from the hit rect,
+  // so registering it directly gives the same events fui::slider would.
+  screen.frame().hit(row, sliderAction, 0, fui::InputTouch | fui::InputDrag);
+  screen.target().fill(row, fui::Paint::solid(fui::Color::White), kSliderTrackRadius);
+  // The fill sits INSIDE the outline (inset by the stroke width) so the capsule
+  // reads as one unbroken shape at every value instead of the fill riding over
+  // its own border.
+  constexpr int16_t kStroke = 2;
+  const fui::Rect inner = row.inset(fui::Insets{kStroke, kStroke, kStroke, kStroke});
+  const int filled = (static_cast<int>(inner.width) * value) / 100;
+  if (filled > 0) {
+    // Round only the LEFT corners, at the capsule's own radius: that cap sits
+    // exactly on the inset capsule's left end (an inset capsule is still a
+    // capsule), while the right edge stays a straight line at the true value.
+    // Rounding all four corners instead forced a minimum width of a whole
+    // stadium, which made every value under ~20% draw identically.
+    // Floor the width at the cap's own radius: any narrower and the cap has to
+    // shrink with it, whose straight sides then poke out through the capsule's
+    // curve (a 5px sliver looked like a crack in the outline).
+    const int16_t cap = static_cast<int16_t>(inner.height / 2);
+    const int16_t fillW = static_cast<int16_t>(std::min<int>(inner.width, std::max<int>(filled, cap)));
+    const uint8_t r = static_cast<uint8_t>(cap);
+    screen.target().fill(fui::Rect{inner.x, inner.y, fillW, inner.height}, fui::Paint::solid(fui::Color::Black), r,
+                         fui::CornerTopLeft | fui::CornerBottomLeft);
+  }
+  screen.target().stroke(row, fui::Paint::solid(fui::Color::Black), kStroke, kSliderTrackRadius);
 }
 
 void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
@@ -342,15 +397,9 @@ void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
   // is. (A title band here just repeated the obvious.)
   screen.setContentMargin(fui::Insets{0, 0, bottomInset, 0});
 
-  screen.spacer(theme.spaceLg);
-
-  // Grabber: centered rounded bar, the standard "pull-down sheet" affordance.
-  {
-    const fui::Rect band = screen.takeTop(kGrabberHeight, theme.spaceLg);
-    const fui::Rect grabber{static_cast<int16_t>(band.x + (band.width - kGrabberWidth) / 2), band.y, kGrabberWidth,
-                            kGrabberHeight};
-    screen.target().fill(grabber, fui::Paint::solid(fui::Color::Black), kGrabberHeight / 2);
-  }
+  // The sheet hangs from the very top of the panel, so it needs a real top inset
+  // of its own — nothing above it reserves space the way a header band did.
+  screen.spacer(static_cast<int16_t>(theme.spaceLg + theme.spaceMd));
 
   if (Frontlight.present()) {
     addSliderRow(screen, tr(STR_BRIGHTNESS), brightness, ACTION_BRIGHTNESS, ACTION_BRIGHTNESS_STEP,
@@ -400,17 +449,18 @@ void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
     }
   }
 
-  screen.spacer(theme.spaceLg);
+  // Grabber last: the handle belongs on the edge the sheet is dragged from, and
+  // this sheet hangs from the top of the screen, so it sits along the bottom.
+  {
+    screen.spacer(theme.spaceMd);
+    const fui::Rect band = screen.takeTop(kGrabberHeight, theme.spaceLg);
+    const fui::Rect grabber{static_cast<int16_t>(band.x + (band.width - kGrabberWidth) / 2), band.y, kGrabberWidth,
+                            kGrabberHeight};
+    screen.target().fill(grabber, fui::Paint::solid(fui::Color::Black), kGrabberHeight / 2);
+  }
 }
 
 void FrontlightPanelActivity::render(RenderLock&&) {
-  if (screenshotPending) {
-    // The panel is already closing; capture the screen it uncovered.
-    screenshotPending = false;
-    ScreenshotUtil::takeScreenshot(renderer);
-    return;
-  }
-
   panelBottom = computePanelBottom();
   const int pageWidth = renderer.getScreenWidth();
 
