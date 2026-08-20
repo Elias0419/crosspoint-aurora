@@ -28,6 +28,8 @@ jobs:
             asset: firmware-x4pro.bin
           - pio_env: papermono-gh_release
             asset: firmware-papermono.bin
+          - pio_env: lilygo-gh_release
+            asset: firmware-lilygo.bin
     steps:
       - uses: actions/checkout@v6
         with:

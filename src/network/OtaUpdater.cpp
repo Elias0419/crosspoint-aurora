@@ -93,7 +93,12 @@ bool OtaUpdater::isUpdateNewer() const {
   const auto currentVersion = CROSSPOINT_VERSION;
 
   // semantic version check (only match on 3 segments)
-  sscanf(latestVersion.c_str(), "%d.%d.%d", &latestMajor, &latestMinor, &latestPatch);
+  // Tags on this fork have been cut both ways ("1.5.0" and "v1.5.0"). A leading
+  // 'v' leaves sscanf's outputs untouched, so the tag would read as 0.0.0 and
+  // the release would silently never be offered — step over it.
+  const char* latestTag = latestVersion.c_str();
+  if (*latestTag == 'v' || *latestTag == 'V') ++latestTag;
+  sscanf(latestTag, "%d.%d.%d", &latestMajor, &latestMinor, &latestPatch);
   sscanf(currentVersion, "%d.%d.%d", &currentMajor, &currentMinor, &currentPatch);
 
   /*
@@ -143,8 +148,16 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
     return INTERNAL_UPDATE_ERROR;
   }
 
+  // Erase only what the image needs. OTA_SIZE_UNKNOWN makes esp_ota_begin erase
+  // the whole 6.5 MB partition in one blocking call before a single byte is
+  // downloaded — ten to twenty-five seconds parked at "0 / 0", which reads as a
+  // hang and invites a power-cycle. The release JSON already carries the exact
+  // asset size, and passing it also makes an oversized image fail at
+  // esp_ota_begin instead of part-way through the download. Fall back to
+  // OTA_SIZE_UNKNOWN if the release omitted the size.
   esp_ota_handle_t otaHandle = 0;
-  esp_err_t esp_err = esp_ota_begin(updatePartition, OTA_SIZE_UNKNOWN, &otaHandle);
+  const size_t eraseSize = otaSize > 0 ? otaSize : OTA_SIZE_UNKNOWN;
+  esp_err_t esp_err = esp_ota_begin(updatePartition, eraseSize, &otaHandle);
   if (esp_err != ESP_OK) {
     LOG_ERR("OTA", "esp_ota_begin failed: %s", esp_err_to_name(esp_err));
     return INTERNAL_UPDATE_ERROR;
