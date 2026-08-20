@@ -9,6 +9,7 @@
 
 #include <cassert>
 
+#include "HalFrontlight.h"
 #include "HalGPIO.h"
 
 #if FREEINK_DEVICE_PAPERMONO
@@ -96,6 +97,14 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
   // button. Must run after display.deepSleep() so the panel controller gets its
   // deep-sleep command while its rail is still up (enterDeepSleep() in main.cpp
   // guarantees that ordering).
+  // Stop the frontlight PWM and latch its pin at the LED's off level. Every
+  // caller reaches sleep through here (the reader's sleep gesture, the idle
+  // timeout, and setup()'s "woke on USB power, go straight back to sleep"
+  // path), and the light is the largest single load a sleeping reader can
+  // carry, so it is driven off explicitly instead of being left to the pad
+  // isolation in deepSleep(). Inert on boards with no frontlight.
+  Frontlight.prepareForDeepSleep();
+
   freeink::PowerManager::powerDownRailsForSleep();
 
 #if FREEINK_DEVICE_PAPERMONO

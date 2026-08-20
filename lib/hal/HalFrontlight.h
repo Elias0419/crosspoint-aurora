@@ -17,6 +17,10 @@ class HalFrontlight {
   void setWarmth(uint8_t warmPercent);
   void setOn(bool on);
 
+  // Drive and latch the light off for deep sleep. See
+  // FrontlightManager::prepareForDeepSleep(); inert on boards with no light.
+  void prepareForDeepSleep() { manager.prepareForDeepSleep(); }
+
   uint8_t brightness() const { return lastBrightness; }
   uint8_t warmth() const { return manager.colorTemperature(); }
   bool isOn() const { return lit; }
