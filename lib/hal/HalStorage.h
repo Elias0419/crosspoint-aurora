@@ -45,6 +45,11 @@ class HalStorage {
   bool openFileForWrite(const char* moduleName, const String& path, HalFile& file);
   bool removeDir(const char* path);
 
+  // Unmount cleanly on the way into deep sleep; see
+  // SDCardManager::prepareForSleep(). Taken under the storage lock so it cannot
+  // land in the middle of another task's file operation.
+  void prepareForSleep();
+
   static HalStorage& getInstance() { return instance; }
 
   class StorageLock;  // private class, used internally

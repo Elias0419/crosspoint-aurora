@@ -35,6 +35,11 @@ class HalStorage::StorageLock {
   ~StorageLock() { xSemaphoreGiveRecursive(HalStorage::getInstance().storageMutex); }
 };
 
+void HalStorage::prepareForSleep() {
+  StorageLock lock;  // never unmount underneath another task's open file
+  SDCard.prepareForSleep();
+}
+
 #define HAL_STORAGE_WRAPPED_CALL(method, ...) \
   HalStorage::StorageLock lock;               \
   return SDCard.method(__VA_ARGS__);

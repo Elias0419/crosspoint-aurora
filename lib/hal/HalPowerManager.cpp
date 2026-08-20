@@ -11,6 +11,7 @@
 
 #include "HalFrontlight.h"
 #include "HalGPIO.h"
+#include "HalStorage.h"
 
 #if FREEINK_DEVICE_PAPERMONO
 #include <M5Pm1.h>
@@ -68,6 +69,22 @@ void HalPowerManager::setPowerSaving(bool enabled) {
 }
 
 void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
+  // Unmount the card while it is still powered and its bus is still up. Every
+  // sleep write is already done by the time we get here (enterDeepSleep()'s last
+  // one is the Quick Resume frame). Must precede BOTH the Xteink GPIO13 drop
+  // below and powerDownRailsForSleep(), each of which pulls power out from under
+  // the card — and on boards with no SD rail this is the only thing that leaves
+  // it idle rather than mounted-and-powered all through sleep.
+  Storage.prepareForSleep();
+
+  // Stop the frontlight PWM and latch its pin at the LED's off level. Every
+  // caller reaches sleep through here (the reader's sleep gesture, the idle
+  // timeout, and setup()'s "woke on USB power, go straight back to sleep"
+  // path), and a lit frontlight is the largest single load a sleeping reader
+  // can carry, so it is driven off explicitly instead of being left to the pad
+  // isolation in deepSleep(). Inert on boards with no frontlight.
+  Frontlight.prepareForDeepSleep();
+
 #ifdef ENABLE_SERIAL_LOG
   // Tear down HWCDC so the host sees a clean disconnect and the peripheral
   // doesn't hold power domains that interfere with USB-powered GPIO wake.
@@ -97,14 +114,6 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
   // button. Must run after display.deepSleep() so the panel controller gets its
   // deep-sleep command while its rail is still up (enterDeepSleep() in main.cpp
   // guarantees that ordering).
-  // Stop the frontlight PWM and latch its pin at the LED's off level. Every
-  // caller reaches sleep through here (the reader's sleep gesture, the idle
-  // timeout, and setup()'s "woke on USB power, go straight back to sleep"
-  // path), and the light is the largest single load a sleeping reader can
-  // carry, so it is driven off explicitly instead of being left to the pad
-  // isolation in deepSleep(). Inert on boards with no frontlight.
-  Frontlight.prepareForDeepSleep();
-
   freeink::PowerManager::powerDownRailsForSleep();
 
 #if FREEINK_DEVICE_PAPERMONO
