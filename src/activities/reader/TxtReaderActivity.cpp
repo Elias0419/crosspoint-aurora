@@ -319,6 +319,7 @@ void TxtReaderActivity::renderPage(GfxRenderer& renderer) {
   scope.endScanAndPrewarm();
 
   // BW rendering
+  renderer.setGlyphWeight(SETTINGS.textStrokeWeight);
   renderLines();
   renderStatusBar();
 

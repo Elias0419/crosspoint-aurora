@@ -523,6 +523,10 @@ static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode 
 
   const uint8_t* bitmap = renderer.getGlyphBitmap(fontData, glyph);
 
+  // Stroke weight, as the bucket -> tone table it reduces to. Hoisted out of the
+  // pixel loop: it costs one table lookup per pixel below.
+  const uint8_t* const toneMap = renderer.getGlyphToneMap();
+
   if (bitmap != nullptr) {
     // For Normal:  outer loop advances screenY, inner loop advances screenX
     // For Rotated: outer loop advances screenX, inner loop advances screenY (in reverse)
@@ -554,9 +558,17 @@ static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode 
           // the direct bit from the font is 0 -> white, 1 -> light gray, 2 -> dark gray, 3 -> black
           // we swap this to better match the way images and screen think about colors:
           // 0 -> black, 1 -> dark grey, 2 -> light grey, 3 -> white
-          const uint8_t bmpVal = 3 - ((byte >> bit_index) & 0x3);
+          const uint8_t bmpVal = toneMap[3 - ((byte >> bit_index) & 0x3)];
 
-          if (renderMode == GfxRenderer::BW && bmpVal < 3) {
+          // Tone 3 is not painted at all, so it has no grey to be lifted to
+          // either -- and the grayscale planes read the same mapped tone, so a
+          // pixel the B/W base left white can never be marked and driven from
+          // the wrong rail.
+          if (bmpVal == 3) {
+            continue;
+          }
+
+          if (renderMode == GfxRenderer::BW) {
             // Black (also paints over the grays in BW mode)
             renderer.drawPixel(screenX, screenY, pixelState);
           } else if (renderMode == GfxRenderer::GRAYSCALE_MSB && (bmpVal == 1 || bmpVal == 2)) {

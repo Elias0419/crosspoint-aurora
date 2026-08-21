@@ -30,6 +30,9 @@ class GfxRenderer {
  public:
   enum RenderMode { BW, GRAYSCALE_LSB, GRAYSCALE_MSB };
 
+  // Number of stroke weights setGlyphWeight() accepts.
+  static constexpr uint8_t GLYPH_WEIGHT_COUNT = 5;
+
   // Logical screen orientation from the perspective of callers
   enum Orientation {
     Portrait,                  // 480x800 logical coordinates (current default)
@@ -45,6 +48,16 @@ class GfxRenderer {
   RenderMode renderMode;
   Orientation orientation;
   bool fadingFix;
+  // Stroke weight index; see setGlyphWeight(). 2 is unweighted anti-aliasing:
+  // every bucket drawn in the tone the font measured.
+  uint8_t glyphWeight = 2;
+  static constexpr uint8_t GLYPH_TONE_MAPS[GLYPH_WEIGHT_COUNT][4] = {
+      {0, 3, 3, 3},  // thinnest: solid pixels only, no fringe at all
+      {0, 1, 3, 3},  // thin: outer bucket dropped
+      {0, 1, 2, 3},  // regular: the font's own tones
+      {0, 0, 1, 3},  // thick: every bucket one tone darker
+      {0, 0, 0, 3},  // thickest: all ink solid black
+  };
   uint8_t* frameBuffer = nullptr;
   uint16_t panelWidth = HalDisplay::DISPLAY_WIDTH;
   uint16_t panelHeight = HalDisplay::DISPLAY_HEIGHT;
@@ -197,6 +210,26 @@ class GfxRenderer {
 
   // Fading fix control
   void setFadingFix(const bool enabled) { fadingFix = enabled; }
+
+  // Stroke weight for 2-bit (anti-aliased) fonts.
+  //
+  // A 2-bit font quantises a glyph edge into four ink buckets, and weight is
+  // which tone each bucket is drawn in. Going lighter drops the outer buckets
+  // (less ink, and no grey left to lift, so the stroke also gets sharper); going
+  // heavier promotes them toward solid black. The heaviest step paints every
+  // bucket black, which is the flat shape the reader drew before it could render
+  // grey at all.
+  //
+  // Weight never touches glyph metrics, so changing it neither reflows text nor
+  // repaginates. 1-bit fonts carry no coverage and ignore it.
+  void setGlyphWeight(const uint8_t weight) {
+    glyphWeight = weight < GLYPH_WEIGHT_COUNT ? weight : static_cast<uint8_t>(GLYPH_WEIGHT_COUNT - 1);
+  }
+  uint8_t getGlyphWeight() const { return glyphWeight; }
+
+  // Bucket -> tone, both in bmpVal space (0 black, 1 dark grey, 2 light grey,
+  // 3 not painted). Read once per glyph and indexed per pixel.
+  const uint8_t* getGlyphToneMap() const { return GLYPH_TONE_MAPS[glyphWeight]; }
 
   // Screen ops
   int getScreenWidth() const;

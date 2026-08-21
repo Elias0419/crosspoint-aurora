@@ -27,7 +27,10 @@ constexpr StrId TAB_NAME_IDS[] = {StrId::STR_FONT, StrId::STR_SIZE, StrId::STR_L
 constexpr StrId LAYOUT_ROW_NAME_IDS[] = {StrId::STR_LINE_SPACING, StrId::STR_EXTRA_SPACING, StrId::STR_ALIGNMENT,
                                          StrId::STR_SCREEN_MARGIN};
 constexpr StrId STYLE_ROW_NAME_IDS[] = {StrId::STR_FOCUS_READING, StrId::STR_HYPHENATION, StrId::STR_EMBEDDED_STYLE,
-                                        StrId::STR_TEXT_AA};
+                                        StrId::STR_TEXT_AA, StrId::STR_STROKE_WEIGHT};
+
+constexpr StrId STROKE_WEIGHT_IDS[] = {StrId::STR_WEIGHT_THINNEST, StrId::STR_WEIGHT_THIN, StrId::STR_WEIGHT_NORMAL,
+                                       StrId::STR_WEIGHT_THICK, StrId::STR_WEIGHT_THICKEST};
 
 int findCurrentFontIndex(const SdCardFontRegistry* registry, const char* sdFontFamilyName, uint8_t fontFamily) {
   if (sdFontFamilyName[0] != '\0' && registry) {
@@ -442,6 +445,15 @@ void TextSettingsActivity::confirmStyleRow(int row) {
     case StyleRow::AntiAliasing:
       SETTINGS.textAntiAliasing = !SETTINGS.textAntiAliasing;
       break;
+    case StyleRow::StrokeWeight:
+      optionPopup_.show(StrId::STR_STROKE_WEIGHT, STROKE_WEIGHT_IDS, static_cast<int>(std::size(STROKE_WEIGHT_IDS)),
+                        SETTINGS.textStrokeWeight, [this](int idx) {
+                          SETTINGS.textStrokeWeight = static_cast<uint8_t>(idx);
+                          SETTINGS.saveToFile();
+                          renderer.setGlyphWeight(SETTINGS.textStrokeWeight);
+                        });
+      requestUpdate();
+      return;
 
     default:
       return;
@@ -460,6 +472,10 @@ std::string TextSettingsActivity::styleValueText(int row) const {
       return SETTINGS.embeddedStyle ? tr(STR_STATE_ON) : tr(STR_STATE_OFF);
     case StyleRow::AntiAliasing:
       return SETTINGS.textAntiAliasing ? tr(STR_STATE_ON) : tr(STR_STATE_OFF);
+    case StyleRow::StrokeWeight: {
+      const uint8_t v = SETTINGS.textStrokeWeight;
+      return v < std::size(STROKE_WEIGHT_IDS) ? I18N.get(STROKE_WEIGHT_IDS[v]) : I18N.get(StrId::STR_WEIGHT_NORMAL);
+    }
 
     default:
       return "";

@@ -363,6 +363,11 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         SettingInfo::Toggle(StrId::STR_TEXT_AA, &CrossPointSettings::textAntiAliasing, "textAntiAliasing",
                             StrId::STR_CAT_READER)
             .withTextSettings(),
+        SettingInfo::Enum(StrId::STR_STROKE_WEIGHT, &CrossPointSettings::textStrokeWeight,
+                          {StrId::STR_WEIGHT_THINNEST, StrId::STR_WEIGHT_THIN, StrId::STR_WEIGHT_NORMAL, StrId::STR_WEIGHT_THICK,
+                           StrId::STR_WEIGHT_THICKEST},
+                          "textStrokeWeight", StrId::STR_CAT_READER)
+            .withTextSettings(),
         SettingInfo::Enum(StrId::STR_IMAGES, &CrossPointSettings::imageRendering,
                           {StrId::STR_IMAGES_DISPLAY, StrId::STR_IMAGES_PLACEHOLDER, StrId::STR_IMAGES_SUPPRESS},
                           "imageRendering", StrId::STR_CAT_READER),

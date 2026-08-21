@@ -265,6 +265,12 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Text rendering settings
   uint8_t extraParagraphSpacing = 1;
   uint8_t textAntiAliasing = 1;
+  // Stroke weight for anti-aliased (2-bit) fonts, 0 (thinnest) to 4 (thickest);
+  // see GfxRenderer::setGlyphWeight(). 2 is unweighted anti-aliasing and 4 is
+  // the flat all-ink-black shape the reader drew before it could render grey.
+  // The default sits one step heavy of plain anti-aliasing: grey edges give up
+  // real ink against a paper-white panel, and text reads thin without it.
+  uint8_t textStrokeWeight = 3;
   // Short power button click behaviour
   uint8_t shortPwrBtn = IGNORE;
   // Configurable button actions (BUTTON_ACTION values). Short = tap, long =
@@ -466,6 +472,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   float getReaderLineCompression() const;
   unsigned long getSleepTimeoutMs() const;
   int getRefreshFrequency() const;
+
+
 };
 
 // Helper macro to access settings
