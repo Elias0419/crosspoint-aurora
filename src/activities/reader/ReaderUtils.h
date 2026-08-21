@@ -2,6 +2,9 @@
 
 #include <CrossPointSettings.h>
 #include <GfxRenderer.h>
+#include <Memory.h>
+
+#include <cstring>
 #include <HalGPIO.h>
 #include <HalTiltSensor.h>
 #include <Logging.h>
@@ -221,6 +224,45 @@ void renderAntiAliased(GfxRenderer& renderer, RenderFn&& renderFn) {
   renderer.setRenderMode(GfxRenderer::BW);
 
   renderer.restoreBwBuffer();
+}
+
+// Single-push anti-aliasing: render the page ONCE with gray capture armed, so
+// the same walk yields the B/W frame and both AA planes, then send everything
+// to the panel as one waveform. Only valid on a panel whose waveform lands a
+// grey from any source state (supportsGrayFrame), and skipped in night mode
+// because inversion would invert the planes' meaning.
+//
+// Returns false without rendering anything when the path does not apply (panel,
+// inversion, or plane-buffer OOM); the caller then runs its staged flow.
+// Handles the refresh-cadence bookkeeping itself, exactly like
+// displayWithRefreshCycle: a page due for its periodic clean goes out under
+// HALF (the GC16-style bank, which lands greys exactly and scrubs residue),
+// every other page under FAST (the differential bank).
+template <typename RenderFn>
+bool renderPageGrayFrame(GfxRenderer& renderer, int& pagesUntilFullRefresh, RenderFn&& renderFn) {
+  if (!renderer.supportsGrayFrame() || SETTINGS.screenInverted) return false;
+  const int gh = renderer.getDisplayHeight();
+  const size_t planeBytes = static_cast<size_t>(renderer.getDisplayWidthBytes()) * gh;
+  auto lsb = makeUniqueNoThrow<uint8_t[]>(planeBytes);
+  auto msb = lsb ? makeUniqueNoThrow<uint8_t[]>(planeBytes) : nullptr;
+  if (!msb) return false;
+  memset(lsb.get(), 0, planeBytes);
+  memset(msb.get(), 0, planeBytes);
+
+  renderer.beginGrayCapture(lsb.get(), msb.get());
+  renderFn();
+  renderer.endGrayCapture();
+
+  renderer.writeGrayscalePlaneStrip(true, lsb.get(), 0, gh);
+  renderer.writeGrayscalePlaneStrip(false, msb.get(), 0, gh);
+  const auto mode = (pagesUntilFullRefresh <= 1) ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH;
+  renderer.displayGrayscaleFrame(mode);
+  if (pagesUntilFullRefresh <= 1) {
+    pagesUntilFullRefresh = SETTINGS.getRefreshFrequency();
+  } else {
+    pagesUntilFullRefresh--;
+  }
+  return true;
 }
 
 struct BackNavCallback {

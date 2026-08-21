@@ -90,6 +90,13 @@ class GfxRenderer {
   // planes render band-by-band straight to the controller without destroying
   // the BW framebuffer (no storeBwBuffer). Mutable because the render path is
   // const. See beginStripTarget()/endStripTarget().
+  // Gray-capture: while armed, the 2-bit glyph path mirrors its grey tones into
+  // these 1-bpp planes during a normal BW render, so one walk over the page
+  // yields the B/W frame AND both AA planes. Buffers are caller-owned,
+  // panelWidthBytes x panelHeight, pre-cleared to 0x00. Bit semantics match the
+  // GRAYSCALE_LSB/MSB passes: LSB set = dark grey, MSB set = any grey.
+  mutable uint8_t* _grayCapLsb = nullptr;
+  mutable uint8_t* _grayCapMsb = nullptr;
   mutable uint8_t* _stripBuf = nullptr;
   mutable int _stripY0 = 0;
   mutable int _stripRows = 0;
@@ -370,6 +377,22 @@ class GfxRenderer {
   void copyGrayscaleLsbBuffers() const;
   void copyGrayscaleMsbBuffers() const;
   void displayGrayBuffer() const;
+  // Single-push grayscale (framebuffer + staged planes as one waveform).
+  bool supportsGrayFrame() const;
+  void displayGrayscaleFrame(HalDisplay::RefreshMode mode) const;
+
+  // Arm/disarm gray capture; see _grayCapLsb above. Capture is only consulted
+  // by the 2-bit glyph path in BW mode, so UI chrome (1-bit fonts) and every
+  // other primitive render exactly as before while it is armed.
+  void beginGrayCapture(uint8_t* lsbPlane, uint8_t* msbPlane) const {
+    _grayCapLsb = lsbPlane;
+    _grayCapMsb = msbPlane;
+  }
+  void endGrayCapture() const { _grayCapLsb = _grayCapMsb = nullptr; }
+  bool grayCaptureActive() const { return _grayCapLsb != nullptr; }
+  // Mirror one glyph pixel's grey tone (bmpVal 1 = dark, 2 = light) into the
+  // capture planes. No-op when capture is not armed.
+  void captureGray(int x, int y, uint8_t bmpVal) const;
 
   // Tiled grayscale (X4): stream one band of a plane straight to controller RAM
   // from `scratch` (panelWidthBytes * numRows, physical rows [yStart, yStart+

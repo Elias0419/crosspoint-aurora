@@ -13,6 +13,7 @@
 #include <esp_system.h>
 
 #include <algorithm>
+#include <cstring>
 #include <functional>
 #include <iterator>
 #include <limits>
@@ -1437,9 +1438,53 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
     renderer.clearScreen();
   }
 
+  // Single-push grayscale: on a panel whose waveform can land a grey from any
+  // source state, the page's ONE render below also captures both AA planes,
+  // and displayGrayscaleFrame() sends text and greys as one waveform. No base
+  // push, no second walk over the page, no window in which the page is on
+  // screen without its anti-aliasing. Image pages stay on the staged path
+  // (their grayscale pass re-renders the images), and night mode falls back
+  // (inverted output would invert the planes' meaning).
+  const bool wantGrayFrame =
+      needsTextGrayscale && !pageHasImages && renderer.supportsGrayFrame() && !SETTINGS.screenInverted;
+  const int gfh = renderer.getDisplayHeight();
+  const size_t gfPlaneBytes = static_cast<size_t>(renderer.getDisplayWidthBytes()) * gfh;
+  std::unique_ptr<uint8_t[]> gfLsb, gfMsb;
+  if (wantGrayFrame) {
+    gfLsb = makeUniqueNoThrow<uint8_t[]>(gfPlaneBytes);
+    gfMsb = gfLsb ? makeUniqueNoThrow<uint8_t[]>(gfPlaneBytes) : nullptr;
+    if (gfMsb) {
+      memset(gfLsb.get(), 0, gfPlaneBytes);
+      memset(gfMsb.get(), 0, gfPlaneBytes);
+      renderer.beginGrayCapture(gfLsb.get(), gfMsb.get());
+    } else {
+      gfLsb.reset();  // OOM: run the staged path unchanged
+    }
+  }
+
   page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
   renderStatusBar();
+  renderer.endGrayCapture();
   const auto tBwRender = millis();
+
+  if (gfLsb) {
+    renderer.writeGrayscalePlaneStrip(true, gfLsb.get(), 0, gfh);
+    renderer.writeGrayscalePlaneStrip(false, gfMsb.get(), 0, gfh);
+    const auto mode = (pagesUntilFullRefresh <= 1) ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH;
+    renderer.displayGrayscaleFrame(mode);
+    if (pagesUntilFullRefresh <= 1) {
+      pagesUntilFullRefresh = SETTINGS.getRefreshFrequency();
+    } else {
+      pagesUntilFullRefresh--;
+    }
+    // No grayscale cleanup: the panel's canvas holding the finished page IS the
+    // baseline the next push diffs against. Resetting it to B/W here would make
+    // the next UI push re-drive every fringe pixel for nothing.
+    const auto tEnd = millis();
+    LOG_DBG("ERS", "Page render (gray frame): prewarm=%lums render=%lums push=%lums total=%lums", tPrewarm - t0,
+            tBwRender - tPrewarm, tEnd - tBwRender, tEnd - t0);
+    return;
+  }
 
   constexpr int STRIP_ROWS = 80;
   const int gh = renderer.getDisplayHeight();

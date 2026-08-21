@@ -571,6 +571,9 @@ static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode 
           if (renderMode == GfxRenderer::BW) {
             // Black (also paints over the grays in BW mode)
             renderer.drawPixel(screenX, screenY, pixelState);
+            // With gray capture armed this same walk also yields the AA
+            // planes, so a page needs one render instead of three.
+            if (bmpVal != 0) renderer.captureGray(screenX, screenY, bmpVal);
           } else if (renderMode == GfxRenderer::GRAYSCALE_MSB && (bmpVal == 1 || bmpVal == 2)) {
             // Light gray (also mark the MSB if it's going to be a dark gray too)
             // Dedicated X3 gray LUTs now provide proper 4-level gray on both devices
@@ -2310,6 +2313,24 @@ void GfxRenderer::copyGrayscaleLsbBuffers() const { display.copyGrayscaleLsbBuff
 void GfxRenderer::copyGrayscaleMsbBuffers() const { display.copyGrayscaleMsbBuffers(frameBuffer); }
 
 void GfxRenderer::displayGrayBuffer() const { display.displayGrayBuffer(fadingFix); }
+
+bool GfxRenderer::supportsGrayFrame() const { return display.supportsGrayFrame(); }
+
+void GfxRenderer::displayGrayscaleFrame(const HalDisplay::RefreshMode mode) const {
+  display.displayGrayscaleFrame(mode, fadingFix);
+}
+
+void GfxRenderer::captureGray(const int x, const int y, const uint8_t bmpVal) const {
+  if (_grayCapLsb == nullptr) return;
+  int phyX = 0;
+  int phyY = 0;
+  rotateCoordinates(orientation, x, y, &phyX, &phyY, panelWidth, panelHeight);
+  if (phyX < 0 || phyX >= panelWidth || phyY < 0 || phyY >= panelHeight) return;
+  const uint32_t byteIndex = static_cast<uint32_t>(phyY) * panelWidthBytes + (phyX / 8);
+  const uint8_t mask = static_cast<uint8_t>(0x80 >> (phyX % 8));
+  _grayCapMsb[byteIndex] |= mask;                     // any grey marks the MSB plane
+  if (bmpVal == 1) _grayCapLsb[byteIndex] |= mask;    // dark grey marks LSB too
+}
 
 void GfxRenderer::writeGrayscalePlaneStrip(bool lsbPlane, const uint8_t* scratch, int yStart, int numRows) const {
   // Guard the uint16_t casts below: a negative would wrap to a huge length.

@@ -318,8 +318,19 @@ void TxtReaderActivity::renderPage(GfxRenderer& renderer) {
   renderStatusBar();  // scan: a CJK title joins the batch prewarm
   scope.endScanAndPrewarm();
 
-  // BW rendering
   renderer.setGlyphWeight(SETTINGS.textStrokeWeight);
+
+  // Single-push path: one render captures the AA planes alongside the B/W
+  // frame and everything goes out as one waveform. Falls back to the staged
+  // base + replay flow when the panel (or night mode, or memory) cannot.
+  if (SETTINGS.textAntiAliasing && ReaderUtils::renderPageGrayFrame(renderer, pagesUntilFullRefresh, [&]() {
+        renderLines();
+        renderStatusBar();
+      })) {
+    return;
+  }
+
+  // BW rendering
   renderLines();
   renderStatusBar();
 
