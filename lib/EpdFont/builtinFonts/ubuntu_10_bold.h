@@ -3,7 +3,7 @@
  * name: ubuntu_10_bold
  * size: 10
  * mode: 1-bit
- * Command used: C:\Users\jetau\OneDrive\Desktop\Projects\crosspoint\crosspoint-reader\lib\EpdFont\scripts\fontconvert.py ubuntu_10_bold 10 C:\Users\jetau\OneDrive\Desktop\Projects\crosspoint\crosspoint-reader\lib\EpdFont\builtinFonts\source\Ubuntu\Ubuntu-VN-Bold.ttf C:\Users\jetau\OneDrive\Desktop\Projects\crosspoint\crosspoint-reader\lib\EpdFont\builtinFonts\source\NotoSansHebrew\NotoSansHebrew-Bold.ttf --additional-intervals 0x05D0,0x05EA --force-autohint
+ * Command used: fontconvert.py ubuntu_10_bold 10 ../builtinFonts/source/Ubuntu/Ubuntu-VN-Bold.ttf ../builtinFonts/source/NotoSansHebrew/NotoSansHebrew-Bold.ttf --additional-intervals 0x05D0,0x05EA --force-autohint
  */
 #pragma once
 #include "EpdFontData.h"

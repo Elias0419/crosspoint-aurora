@@ -13,7 +13,7 @@ for size in ${NOTOSERIF_FONT_SIZES[@]}; do
     font_name="notoserif_${size}_$(echo $style | tr '[:upper:]' '[:lower:]')"
     font_path="../builtinFonts/source/NotoSerif/NotoSerif-${style}.ttf"
     output_path="../builtinFonts/${font_name}.h"
-    python fontconvert.py $font_name $size $font_path --2bit --compress --pnum > $output_path
+    python fontconvert.py $font_name $size $font_path --2bit --compress --pnum --force-autohint > $output_path
     echo "Generated $output_path"
   done
 done
@@ -23,7 +23,7 @@ for size in ${NOTOSANS_FONT_SIZES[@]}; do
     font_name="notosans_${size}_$(echo $style | tr '[:upper:]' '[:lower:]')"
     font_path="../builtinFonts/source/NotoSans/NotoSans-${style}.ttf"
     output_path="../builtinFonts/${font_name}.h"
-    python fontconvert.py $font_name $size $font_path --2bit --compress --pnum > $output_path
+    python fontconvert.py $font_name $size $font_path --2bit --compress --pnum --force-autohint > $output_path
     echo "Generated $output_path"
   done
 done
@@ -42,12 +42,12 @@ for size in ${UI_FONT_SIZES[@]}; do
     hebrew_path="../builtinFonts/source/NotoSansHebrew/NotoSansHebrew-${style}.ttf"
     python fontconvert.py "ubuntu_${size}_${lc}" $size \
       "../builtinFonts/source/Ubuntu/Ubuntu-VN-${style}.ttf" $hebrew_path \
-      --additional-intervals 0x05D0,0x05EA > "../builtinFonts/ubuntu_${size}_${lc}.h"
+      --additional-intervals 0x05D0,0x05EA --force-autohint > "../builtinFonts/ubuntu_${size}_${lc}.h"
     echo "Generated ../builtinFonts/ubuntu_${size}_${lc}.h"
 
     python fontconvert.py "notosansui_${size}_${lc}" $size \
       "../builtinFonts/source/NotoSans/NotoSans-${style}.ttf" $hebrew_path \
-      --additional-intervals 0x05D0,0x05EA > "../builtinFonts/notosansui_${size}_${lc}.h"
+      --additional-intervals 0x05D0,0x05EA --force-autohint > "../builtinFonts/notosansui_${size}_${lc}.h"
     echo "Generated ../builtinFonts/notosansui_${size}_${lc}.h"
   done
 done
@@ -57,10 +57,10 @@ done
 for size in 10 12; do
   python fontconvert.py "ebgaramond_${size}_regular" $size \
     "../builtinFonts/source/EBGaramond/EBGaramond-Regular.ttf" "$hebrew_path" \
-    --additional-intervals 0x05D0,0x05EA > "../builtinFonts/ebgaramond_${size}_regular.h"
+    --additional-intervals 0x05D0,0x05EA --force-autohint > "../builtinFonts/ebgaramond_${size}_regular.h"
   python fontconvert.py "ebgaramond_${size}_bold" $size \
     "../builtinFonts/source/EBGaramond/EBGaramond-Bold.ttf" "${hebrew_path/Regular/Bold}" \
-    --additional-intervals 0x05D0,0x05EA > "../builtinFonts/ebgaramond_${size}_bold.h"
+    --additional-intervals 0x05D0,0x05EA --force-autohint > "../builtinFonts/ebgaramond_${size}_bold.h"
   echo "Generated ebgaramond_${size}_{regular,bold}.h"
 done
 
@@ -69,10 +69,10 @@ done
 for size in 10 12; do
   python fontconvert.py "sfugoudy_${size}_regular" $size \
     "../builtinFonts/source/SFUGoudy/SFUGoudyMedium.ttf" "$hebrew_path" \
-    --additional-intervals 0x05D0,0x05EA > "../builtinFonts/sfugoudy_${size}_regular.h"
+    --additional-intervals 0x05D0,0x05EA --force-autohint > "../builtinFonts/sfugoudy_${size}_regular.h"
   python fontconvert.py "sfugoudy_${size}_bold" $size \
     "../builtinFonts/source/SFUGoudy/SFUGoudyMedium.ttf" "$hebrew_path" \
-    --additional-intervals 0x05D0,0x05EA > "../builtinFonts/sfugoudy_${size}_bold.h"
+    --additional-intervals 0x05D0,0x05EA --force-autohint > "../builtinFonts/sfugoudy_${size}_bold.h"
   echo "Generated sfugoudy_${size}_{regular,bold}.h"
 done
 
@@ -80,7 +80,7 @@ python fontconvert.py notosans_8_regular 8 \
   ../builtinFonts/source/NotoSans/NotoSans-Regular.ttf \
   ../builtinFonts/source/NotoSansHebrew/NotoSansHebrew-Regular.ttf \
   ../builtinFonts/source/NotoSansArabic/NotoSansArabic-Regular.ttf \
-  --additional-intervals 0x05D0,0x05EA "${ARABIC_INTERVALS[@]}" > ../builtinFonts/notosans_8_regular.h
+  --additional-intervals 0x05D0,0x05EA "${ARABIC_INTERVALS[@]}" --force-autohint > ../builtinFonts/notosans_8_regular.h
 
 echo ""
 echo "Running compression verification..."
