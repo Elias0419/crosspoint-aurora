@@ -1441,6 +1441,61 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   renderStatusBar();
   const auto tBwRender = millis();
 
+  constexpr int STRIP_ROWS = 80;
+  const int gh = renderer.getDisplayHeight();
+  const int gwBytes = renderer.getDisplayWidthBytes();
+  const size_t planeBytes = static_cast<size_t>(gwBytes) * gh;
+
+  // One pass over the page, not one per strip. Striping exists to bound the
+  // scratch a plane needs, and a full-page plane buffer has already paid that
+  // cost -- re-walking the page for each 80-row band just re-runs layout and
+  // glyph decode six more times for nothing. The band is the whole plane here,
+  // so glyphIntersectsStrip() culls nothing and every glyph is decoded once.
+  auto renderPlaneToBuffer = [&](const bool lsbPlane, uint8_t* buf) {
+    renderer.setRenderMode(lsbPlane ? GfxRenderer::GRAYSCALE_LSB : GfxRenderer::GRAYSCALE_MSB);
+    renderer.beginStripTarget(buf, 0, gh);
+    renderer.clearScreen(0x00);
+    renderGrayscalePass();
+    renderer.endStripTarget();
+    renderer.setRenderMode(GfxRenderer::BW);
+  };
+
+  constexpr size_t PLANE_BUF_HEADROOM = 60000;
+  constexpr size_t PLANE_BUF_MAX_ALLOC_RESERVE = 16 * 1024;
+  const auto planeBufFits = [planeBytes] {
+    return ESP.getFreeHeap() >= planeBytes + PLANE_BUF_HEADROOM &&
+           ESP.getMaxAllocHeap() >= planeBytes + PLANE_BUF_MAX_ALLOC_RESERVE;
+  };
+
+  std::unique_ptr<uint8_t[]> lsbPlaneBuf, msbPlaneBuf;
+  // Allocate what fits and fill it. Returns with lsbPlaneBuf null when the heap
+  // could not spare a plane, which is the striped path's cue to take over.
+  auto renderPlanes = [&]() {
+    if (lsbPlaneBuf) return;
+    if (planeBufFits()) lsbPlaneBuf = makeUniqueNoThrow<uint8_t[]>(planeBytes);
+    if (lsbPlaneBuf && planeBufFits()) msbPlaneBuf = makeUniqueNoThrow<uint8_t[]>(planeBytes);
+    if (!lsbPlaneBuf) return;
+    renderPlaneToBuffer(true, lsbPlaneBuf.get());
+    // Without a second buffer the MSB plane is re-rendered after the LSB one has
+    // been staged, since it would overwrite it here.
+    if (msbPlaneBuf) renderPlaneToBuffer(false, msbPlaneBuf.get());
+  };
+
+  // Build the greys before the base is shown, so the page arrives finished
+  // rather than appearing and then being corrected a render later. The panel
+  // still takes two waveforms -- the grey nudge only lands correctly on a pixel
+  // the base has driven to black -- but nothing renders between them any more.
+  //
+  // Not on an async panel: there the base refresh is already running while the
+  // planes render, so moving the render earlier would only stall the page.
+  // Not on an image page either: its grayscale pass re-renders the images, and
+  // making that decode block the first paint is the trade backwards.
+  const bool prerenderPlanes = tiledGrayscale && !pageHasImages && !overlapRefresh;
+  if (prerenderPlanes) {
+    renderPlanes();
+  }
+  const auto tPrerender = millis();
+
   if (pageHasImages) {
     // Image pages use one base refresh before the grayscale pass. FAST leaves
     // the panel receptive to the gray waveform; pending cleanup still honors
@@ -1457,45 +1512,10 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   const auto tDisplay = millis();
 
   if (tiledGrayscale) {
-    constexpr int STRIP_ROWS = 80;
-    const int gh = renderer.getDisplayHeight();
-    const int gwBytes = renderer.getDisplayWidthBytes();
-    const size_t planeBytes = static_cast<size_t>(gwBytes) * gh;
-
-    // One pass over the page, not one per strip. Striping exists to bound the
-    // scratch a plane needs, and a full-page plane buffer has already paid that
-    // cost -- re-walking the page for each 80-row band just re-runs layout and
-    // glyph decode six more times for nothing. The band is the whole plane here,
-    // so glyphIntersectsStrip() culls nothing and every glyph is decoded once.
-    //
-    // That is the difference between fifteen walks over a page's content for an
-    // anti-aliased page (B/W + two planes x seven strips) and three.
-    auto renderPlaneToBuffer = [&](const bool lsbPlane, uint8_t* buf) {
-      renderer.setRenderMode(lsbPlane ? GfxRenderer::GRAYSCALE_LSB : GfxRenderer::GRAYSCALE_MSB);
-      renderer.beginStripTarget(buf, 0, gh);
-      renderer.clearScreen(0x00);
-      renderGrayscalePass();
-      renderer.endStripTarget();
-    };
-
-    constexpr size_t PLANE_BUF_HEADROOM = 60000;
-    constexpr size_t PLANE_BUF_MAX_ALLOC_RESERVE = 16 * 1024;
-    const auto planeBufFits = [planeBytes] {
-      return ESP.getFreeHeap() >= planeBytes + PLANE_BUF_HEADROOM &&
-             ESP.getMaxAllocHeap() >= planeBytes + PLANE_BUF_MAX_ALLOC_RESERVE;
-    };
-    // Worth a full-page plane buffer whether or not the base refresh is async.
-    // Overlapping it with the waveform was the original reason to hold one, but
-    // the bigger win is that owning the whole plane lets renderPlaneToBuffer()
-    // walk the page once instead of once per strip -- that stands on a panel
-    // whose refresh blocks too, and it is most of the wait before the greys
-    // land. A panel that cannot spare the heap still gets the striped path.
-    auto lsbPlaneBuf = planeBufFits() ? makeUniqueNoThrow<uint8_t[]>(planeBytes) : nullptr;
-    auto msbPlaneBuf = (lsbPlaneBuf && planeBufFits()) ? makeUniqueNoThrow<uint8_t[]>(planeBytes) : nullptr;
+    // No-op when the planes were already built before the base went out.
+    renderPlanes();
 
     if (lsbPlaneBuf) {
-      renderPlaneToBuffer(true, lsbPlaneBuf.get());
-      if (msbPlaneBuf) renderPlaneToBuffer(false, msbPlaneBuf.get());
       const auto tGrayRender = millis();
 
       renderer.waitRefreshComplete();
@@ -1517,11 +1537,16 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
       renderer.cleanupGrayscaleWithFrameBuffer();
       const auto tEnd = millis();
 
+      // gray_pre is the render moved ahead of the base push and gray_late the
+      // one still behind it; exactly one of them is non-zero, and which tells
+      // you at a glance whether the page reached the panel already finished.
       LOG_DBG("ERS",
-              "Page render (tiled, buffered planes): prewarm=%lums bw_render=%lums display=%lums gray_render=%lums "
-              "wait=%lums gray_write=%lums gray_display=%lums cleanup=%lums total=%lums (planes buffered: %d)",
-              tPrewarm - t0, tBwRender - tPrewarm, tDisplay - tBwRender, tGrayRender - tDisplay, tWait - tGrayRender,
-              tGrayWrite - tWait, tGrayDisplay - tGrayWrite, tEnd - tGrayDisplay, tEnd - t0, msbPlaneBuf ? 2 : 1);
+              "Page render (tiled, buffered planes): prewarm=%lums bw_render=%lums gray_pre=%lums display=%lums "
+              "gray_late=%lums wait=%lums gray_write=%lums gray_display=%lums cleanup=%lums total=%lums "
+              "(planes buffered: %d)",
+              tPrewarm - t0, tBwRender - tPrewarm, tPrerender - tBwRender, tDisplay - tPrerender,
+              tGrayRender - tDisplay, tWait - tGrayRender, tGrayWrite - tWait, tGrayDisplay - tGrayWrite,
+              tEnd - tGrayDisplay, tEnd - t0, msbPlaneBuf ? 2 : 1);
     } else {
       auto scratch = makeUniqueNoThrow<uint8_t[]>(static_cast<size_t>(gwBytes) * STRIP_ROWS);
       renderer.waitRefreshComplete();
