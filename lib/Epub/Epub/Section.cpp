@@ -41,11 +41,15 @@ namespace {
 // v39: Image top margin is clamped so a full-viewport-height image cannot
 //      overflow the page bottom; older caches can hold placements that panels
 //      with no bottom inset refuse to draw.
-// v41 (aurora): header carries the drop-cap + small-caps chapter-opening flags and the
+// v40: Ruby groups remain intact when a large text block is soft-flushed.
+// v41: Simple HTML table rows are laid out as positioned columns instead of
+//      flattened paragraphs with synthetic row/cell labels.
+// v42 (aurora): header carries the drop-cap + small-caps chapter-opening flags and the
 //      drop-cap font id, so toggling either setting — or changing the /.dropcap face,
-//      whose identity drives the cap's wrap inset — re-paginates. (v40 is upstream's;
-//      aurora skips it to stay above every published upstream version.)
-constexpr uint8_t SECTION_FILE_VERSION = 41;
+//      whose identity drives the cap's wrap inset — re-paginates. Aurora had this at
+//      41 while upstream was still on 39; upstream has since published its own 40 and
+//      41, so it moves up to 42 to stay above every published upstream version.
+constexpr uint8_t SECTION_FILE_VERSION = 42;
 // Written into the version field while a build is in progress; patched to
 // SECTION_FILE_VERSION only when the build is finalized. An abandoned /
 // crash-interrupted .bin therefore carries version 0, which loadSectionFile rejects

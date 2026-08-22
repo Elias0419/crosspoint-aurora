@@ -1,13 +1,14 @@
 # SD Card Font Families for CrossPoint Reader
 #
 # This file is the single source of truth for which fonts are generated,
-# how they're sourced, and how they're described in the download manifest.
+# how they're sourced, and how they're presented in the download manifest.
 #
 # Adding a new font family = adding a block here. No code changes needed.
 #
 # Fields:
 #   name:        Output family name (used in filenames and on-device UI)
 #   description: Human-readable description (shown in download UI and manifest)
+#   scripts:     Browser groups this family appears under (declared in scriptGroups)
 #   intervals:   Comma-separated Unicode interval presets for fontconvert_sdcard.py
 #   sizes:       Point sizes to generate
 #   force_autohint: (optional) Force FreeType auto-hinter instead of native hinting
@@ -30,11 +31,26 @@
 #   Extracted static fonts are cached in instanced_fonts/ (gitignored).
 #   Requires fonttools: pip install -r requirements.txt
 
+scriptGroups:
+  - {tag: latin, label: Latin}
+  - {tag: cyrillic, label: Cyrillic}
+  - {tag: greek, label: Greek}
+  - {tag: hebrew, label: Hebrew}
+  - {tag: arabic, label: Arabic}
+  - {tag: georgian, label: Georgian}
+  - {tag: armenian, label: Armenian}
+  - {tag: ethiopic, label: Ethiopic}
+  - {tag: cjk, label: CJK}
+  - {tag: hangul, label: Korean}
+  - {tag: cherokee, label: Cherokee}
+  - {tag: tifinagh, label: Tifinagh}
+
 families:
   # ── Serif ──────────────────────────────────────────────────────────────
 
   - name: Literata
     description: "Screen-optimized serif (Latin, Greek, Cyrillic)"
+    scripts: [latin, cyrillic, greek]
     intervals: latin-ext,greek,cyrillic,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -46,6 +62,7 @@ families:
 
   - name: SourceSerif4
     description: "Adobe transitional serif (Latin, Greek, Cyrillic)"
+    scripts: [latin, cyrillic, greek]
     intervals: latin-ext,greek,cyrillic,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -57,6 +74,7 @@ families:
 
   - name: NotoSerifExtended
     description: "Serif (Latin, Greek, Cyrillic)"
+    scripts: [latin, cyrillic, greek]
     intervals: latin-ext,greek,cyrillic,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -68,6 +86,7 @@ families:
 
   - name: Merriweather
     description: "Warm serif for long-form reading (Latin, Cyrillic)"
+    scripts: [latin, cyrillic]
     intervals: latin-ext,cyrillic,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -79,6 +98,7 @@ families:
 
   - name: Lora
     description: "Calligraphic serif for literary reading (Latin, Cyrillic)"
+    scripts: [latin, cyrillic]
     intervals: latin-ext,cyrillic,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -90,6 +110,7 @@ families:
 
   - name: GentiumBookPlus
     description: "Scholarly serif with wide Unicode coverage (Latin, Greek, Cyrillic, IPA)"
+    scripts: [latin, cyrillic, greek]
     intervals: latin-ext,greek,cyrillic,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -101,6 +122,7 @@ families:
 
   - name: IBMPlexSerif
     description: "Professional serif (Latin, Greek, Cyrillic)"
+    scripts: [latin, cyrillic, greek]
     intervals: latin-ext,greek,cyrillic,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -112,6 +134,7 @@ families:
 
   - name: Bitter
     description: "Slab serif designed for e-ink (Latin, Cyrillic)"
+    scripts: [latin, cyrillic]
     intervals: latin-ext,cyrillic,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -123,6 +146,7 @@ families:
 
   - name: Domitian
     description: "A humanist serif for literary reading (Latin, Greek, Cyrillic)"
+    scripts: [latin, cyrillic, greek]
     intervals: latin-ext,greek,cyrillic,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -134,6 +158,7 @@ families:
 
   - name: LibreBaskerville
     description: "A serif reimplementing the classic Baskerville (Latin)"
+    scripts: [latin]
     intervals: latin-ext,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -145,6 +170,7 @@ families:
 
   - name: Vollkorn
     description: "A serif for bread and butter use by Friedrich Althausen (Latin, Greek, Cyrillic)"
+    scripts: [latin, cyrillic, greek]
     intervals: latin-ext,greek,cyrillic,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -158,6 +184,7 @@ families:
 
   - name: NotoSansExtended
     description: "Sans-serif (Latin, Greek, Cyrillic, Georgian, Armenian, Ethiopic)"
+    scripts: [latin, cyrillic, greek, georgian, armenian, ethiopic]
     intervals: latin-ext,greek,cyrillic,georgian,armenian,ethiopic,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -169,6 +196,7 @@ families:
 
   - name: Inter
     description: "Modern sans-serif (Latin, Greek, Cyrillic)"
+    scripts: [latin, cyrillic, greek]
     intervals: latin-ext,greek,cyrillic,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -180,6 +208,7 @@ families:
 
   - name: SourceSans3
     description: "Adobe humanist sans-serif (Latin, Greek, Cyrillic)"
+    scripts: [latin, cyrillic, greek]
     intervals: latin-ext,greek,cyrillic,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -191,6 +220,7 @@ families:
 
   - name: IBMPlexSans
     description: "IBM corporate sans-serif (Latin, Greek, Cyrillic)"
+    scripts: [latin, cyrillic, greek]
     intervals: latin-ext,greek,cyrillic,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -202,6 +232,7 @@ families:
 
   - name: Alegreya
     description: "Calligraphic serif/display (Latin, Greek, Cyrillic)"
+    scripts: [latin, cyrillic, greek]
     intervals: latin-ext,greek,cyrillic,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -215,6 +246,7 @@ families:
 
   - name: IBMPlexMono
     description: "Monospace for code and technical reading (Latin, Greek, Cyrillic)"
+    scripts: [latin, cyrillic, greek]
     intervals: latin-ext,greek,cyrillic,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -226,6 +258,7 @@ families:
 
   - name: SourceCodePro
     description: "Adobe monospace with excellent hinting (Latin)"
+    scripts: [latin]
     intervals: latin-ext,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -239,6 +272,7 @@ families:
 
   - name: OpenDyslexic
     description: "Dyslexia-friendly font (Latin)"
+    scripts: [latin]
     intervals: latin-ext,ipa-chars
     sizes: [8, 10, 12, 14]
     force_autohint: true
@@ -252,6 +286,7 @@ families:
 
   - name: AtkinsonHyperlegibleNext
     description: "Accessibility font for low vision (Latin)"
+    scripts: [latin]
     intervals: latin-ext,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -263,6 +298,7 @@ families:
 
   - name: LexicaUltralegible
     description: "Accessibility font for low vision / dyslexia (Latin)"
+    scripts: [latin]
     intervals: latin-ext,ipa-chars
     sizes: [12, 14, 16, 18]
     force_autohint: true
@@ -271,4 +307,3 @@ families:
       bold:       {url: "https://raw.githubusercontent.com/jacobxperez/lexica-ultralegible/main/fonts/ttf/LexicaUltralegible-Bold.ttf"}
       italic:     {url: "https://raw.githubusercontent.com/jacobxperez/lexica-ultralegible/main/fonts/ttf/LexicaUltralegible-Italic.ttf"}
       bolditalic: {url: "https://raw.githubusercontent.com/jacobxperez/lexica-ultralegible/main/fonts/ttf/LexicaUltralegible-BoldItalic.ttf"}
-

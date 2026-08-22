@@ -126,7 +126,9 @@ EpdFontFamily smallFontFamily(&smallFont);
 // by every menu/status/home screen; applySystemUiFont() registers the one chosen
 // by SETTINGS.systemFont. Size is fixed (10 / 12) — only the typeface changes.
 //   Noto Sans  — the default Aurora look (notosansui_* + Hebrew fallback).
-//   Ubuntu     — the Vietnamese-localized Ubuntu cut (ubuntu_* + Hebrew fallback).
+//   Ubuntu     — upstream's Medium UI weight (ubuntu_*_medium), whose fontstack
+//                already carries the Vietnamese cut plus Hebrew and Arabic
+//                fallbacks, so aurora no longer needs its own Ubuntu-VN build.
 EpdFont uiNoto10RegularFont(&notosansui_10_regular);
 EpdFont uiNoto10BoldFont(&notosansui_10_bold);
 EpdFontFamily uiNoto10FontFamily(&uiNoto10RegularFont, &uiNoto10BoldFont);
@@ -134,10 +136,10 @@ EpdFont uiNoto12RegularFont(&notosansui_12_regular);
 EpdFont uiNoto12BoldFont(&notosansui_12_bold);
 EpdFontFamily uiNoto12FontFamily(&uiNoto12RegularFont, &uiNoto12BoldFont);
 
-EpdFont uiUbuntu10RegularFont(&ubuntu_10_regular);
+EpdFont uiUbuntu10RegularFont(&ubuntu_10_medium);
 EpdFont uiUbuntu10BoldFont(&ubuntu_10_bold);
 EpdFontFamily uiUbuntu10FontFamily(&uiUbuntu10RegularFont, &uiUbuntu10BoldFont);
-EpdFont uiUbuntu12RegularFont(&ubuntu_12_regular);
+EpdFont uiUbuntu12RegularFont(&ubuntu_12_medium);
 EpdFont uiUbuntu12BoldFont(&ubuntu_12_bold);
 EpdFontFamily uiUbuntu12FontFamily(&uiUbuntu12RegularFont, &uiUbuntu12BoldFont);
 

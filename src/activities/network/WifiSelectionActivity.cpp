@@ -211,7 +211,6 @@ void WifiSelectionActivity::processWifiScanResults() {
     appendHiddenNetworkEntry();
     rebuildNetworkRowItems();
     autoConnecting = false;
-    manualNetworkListRequested = false;
     state = WifiSelectionState::NETWORK_LIST;
     selectedNetworkIndex = 0;
     requestUpdate();
@@ -266,7 +265,6 @@ void WifiSelectionActivity::processWifiScanResults() {
   }
 
   autoConnecting = false;
-  manualNetworkListRequested = false;
   state = WifiSelectionState::NETWORK_LIST;
   selectedNetworkIndex = 0;
   requestUpdate();
@@ -449,6 +447,7 @@ void WifiSelectionActivity::showNetworkListFromAutoConnect() {
 
   if (networks.empty()) {
     startWifiScan(false);
+    manualNetworkListRequested = true;
     return;
   }
 
@@ -742,6 +741,13 @@ void WifiSelectionActivity::loop() {
 
   // Handle network list state
   if (state == WifiSelectionState::NETWORK_LIST) {
+    if (manualNetworkListRequested) {
+      if (!mappedInput.isPressed(MappedInputManager::Button::Confirm)) {
+        manualNetworkListRequested = false;
+      }
+      return;
+    }
+
     // Check for Back button to exit (cancel). Use a release edge (matching the parent
     // Settings screen) so a single press isn't handled here (on press) and again by the
     // parent (on release), popping straight back to the library. See LanguageSelectActivity.
@@ -751,7 +757,7 @@ void WifiSelectionActivity::loop() {
     }
 
     // Check for Confirm button to select network or rescan
-    if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       if (!networks.empty()) {
         selectNetwork(selectedNetworkIndex);
       } else {
