@@ -297,7 +297,13 @@ bool HalGPIO::wasSwipe(float& nxStart, float& nyStart, float& nxEnd, float& nyEn
   return touchEnabled_ && inputMgr.wasSwipe(nxStart, nyStart, nxEnd, nyEnd);
 }
 
-bool HalGPIO::wasTouchActivity() const { return inputMgr.wasTouchActivity() || activeTouch != InjectTouch::None; }
+// Gated with the rest: an ungated activity report would let a palm resting on
+// the glass hold the device awake while the kill-switch says touch is off.
+// Injected touch stays outside the gate, like the injected swipe above: it
+// comes from the serial debug channel, not from the glass.
+bool HalGPIO::wasTouchActivity() const {
+  return activeTouch != InjectTouch::None || (touchEnabled_ && inputMgr.wasTouchActivity());
+}
 
 void HalGPIO::setSharedConfirmPowerShortPressEmitsPower(const bool enabled) {
   InputManager::setSharedConfirmPowerShortPressEmitsPower(enabled);
