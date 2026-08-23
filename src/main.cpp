@@ -1174,8 +1174,10 @@ void runLightSleepProbe(uint32_t seconds, bool useLightSleep) {  // NOLINT(reada
 
   // Wake on the page-turn button as well as the timer, so the probe stays
   // interruptible and the GPIO path gets exercised at the same time.
+#if FREEINK_DEVICE_LILYGO
   gpio_wakeup_enable(static_cast<gpio_num_t>(T5S3_BOOT_BTN), GPIO_INTR_LOW_LEVEL);
   esp_sleep_enable_gpio_wakeup();
+#endif
 
   // Bound the loop by ITERATION COUNT, not by a millis() deadline. Whether
   // millis() advances across light sleep is exactly the thing under test, and
@@ -1229,7 +1231,9 @@ void runLightSleepProbe(uint32_t seconds, bool useLightSleep) {  // NOLINT(reada
   debugReadReg16(g.gaugeAddr, BQ27220_CURRENT, curRaw);
   debugReadReg16(g.gaugeAddr, BQ27220_REMAINING_CAPACITY, remCapEnd);
 
+#if FREEINK_DEVICE_LILYGO
   gpio_wakeup_disable(static_cast<gpio_num_t>(T5S3_BOOT_BTN));
+#endif
   if (frontlightWasOn) Frontlight.setOn(true);
   setChargerHiz(false);
 
