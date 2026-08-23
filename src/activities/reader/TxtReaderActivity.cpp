@@ -351,7 +351,7 @@ void TxtReaderActivity::renderStatusBar() const {
   GUI.drawStatusBar(renderer, progress, currentPage + 1, totalPages, title);
 }
 
-bool TxtReaderActivity::pageTurn(bool isForward) {
+bool TxtReaderActivity::pageTurnImpl(bool isForward) {
   // Ignore paging until initializeReader has established the page index
   if (!initialized) {
     return false;

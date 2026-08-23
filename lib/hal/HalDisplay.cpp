@@ -117,6 +117,7 @@ void HalDisplay::displayGrayscaleBase(RefreshMode fallback, bool turnOffScreen) 
     einkDisplay.requestResync(1);
   }
 
+  if (refreshObserver) refreshObserver();
   einkDisplay.displayGrayscaleBase(convertRefreshMode(fallback), turnOffScreen);
 }
 
@@ -132,11 +133,15 @@ void HalDisplay::copyGrayscaleMsbBuffers(const uint8_t* msbBuffer) { einkDisplay
 
 void HalDisplay::cleanupGrayscaleBuffers(const uint8_t* bwBuffer) { einkDisplay.cleanupGrayscaleBuffers(bwBuffer); }
 
-void HalDisplay::displayGrayBuffer(bool turnOffScreen) { einkDisplay.displayGrayBuffer(turnOffScreen); }
+void HalDisplay::displayGrayBuffer(bool turnOffScreen) {
+  if (refreshObserver) refreshObserver();
+  einkDisplay.displayGrayBuffer(turnOffScreen);
+}
 
 bool HalDisplay::supportsGrayFrame() const { return einkDisplay.supportsGrayFrame(); }
 
 void HalDisplay::displayGrayscaleFrame(RefreshMode mode, bool turnOffScreen) {
+  if (refreshObserver) refreshObserver();
   einkDisplay.displayGrayscaleFrame(convertRefreshMode(mode), turnOffScreen);
 }
 

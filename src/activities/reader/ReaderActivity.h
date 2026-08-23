@@ -5,6 +5,7 @@
 #include <string>
 #include <utility>
 
+#include "BatteryLog.h"
 #include "EndOfBookOptions.h"
 #include "activities/Activity.h"
 
@@ -26,7 +27,15 @@ class ReaderActivity : public Activity {
   virtual std::string getBookThumbBmpPath() const { return ""; }
 
   virtual bool handleFormatInput() { return false; }
-  virtual bool pageTurn(bool isForward) = 0;
+  // Turn one page. Non-virtual on purpose: every reader and every input path
+  // (buttons, touch zones, tilt, auto-turn) goes through here, so this is the
+  // one place that can count turns for the battery telemetry. The format's own
+  // work happens in pageTurnImpl().
+  bool pageTurn(bool isForward) {
+    BatteryLog::notePageTurn();
+    return pageTurnImpl(isForward);
+  }
+  virtual bool pageTurnImpl(bool isForward) = 0;
   virtual bool skipPages(int amount) { return pageTurn(amount > 0); }
   virtual bool isAtEndOfBook() const = 0;
   virtual void onReturnFromEndOfBook() {}

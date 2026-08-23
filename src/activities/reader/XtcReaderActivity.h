@@ -39,7 +39,7 @@ class XtcReaderActivity final : public ReaderActivity {
       : ReaderActivity("XtcReader", renderer, mappedInput, std::move(bookPath), allowFastInitialRefresh) {}
   ~XtcReaderActivity() override = default;
 
-  bool pageTurn(bool isForward) override;
+  bool pageTurnImpl(bool isForward) override;
   bool skipPages(int amount) override;
   bool isAtEndOfBook() const override;
   void onReturnFromEndOfBook() override;

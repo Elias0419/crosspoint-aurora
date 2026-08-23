@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "BatteryLog.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "EpubReaderActivity.h"

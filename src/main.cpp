@@ -1522,7 +1522,13 @@ bool tryIdleLightSleep(unsigned long idleForMs) {
   // holding a sleep lock. Measured at roughly one call in three during the
   // bench probe. Report it so the caller falls back to its ordinary delay
   // rather than busy-looping through a sleep that never happens.
-  return esp_light_sleep_start() == ESP_OK;
+  const unsigned long before = millis();
+  const bool slept = esp_light_sleep_start() == ESP_OK;
+  // millis() runs off the RTC timer, which keeps counting while the CPU is
+  // halted, so this delta is the time the telemetry would otherwise miss
+  // entirely (BatteryLog::accumulate only runs between sleeps).
+  if (slept) BatteryLog::noteLightSleep(static_cast<uint32_t>(millis() - before));
+  return slept;
 }
 
 }  // namespace

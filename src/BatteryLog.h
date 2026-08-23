@@ -43,4 +43,17 @@ void flushNow(const char* event);
 // milliamps-times-seconds like every other load.
 void noteDisplayRefresh();
 
+// Time actually spent halted in light sleep. Since the idle loop started
+// sleeping between page turns this is the single largest term in the model,
+// and it is invisible to accumulate(): the CPU is stopped, so no main-loop
+// pass credits those milliseconds to anything. Without this column the sleep
+// time lands in the residual and drags every other coefficient with it.
+void noteLightSleep(uint32_t ms);
+
+// Count a page turn. A row's page count says how much of its interval was
+// "reading" rather than "idle with the page up", which is what separates the
+// per-turn cost (render + refresh + the clock ramp behind them) from the
+// standing floor. Refresh count alone can't: menus and popups refresh too.
+void notePageTurn();
+
 }  // namespace BatteryLog

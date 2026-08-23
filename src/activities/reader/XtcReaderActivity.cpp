@@ -287,7 +287,7 @@ void XtcReaderActivity::renderPage() {
   LOG_DBG("XTR", "Rendered page %lu/%lu (%u-bit)", currentPage + 1, xtc->getPageCount(), bitDepth);
 }
 
-bool XtcReaderActivity::pageTurn(bool isForward) {
+bool XtcReaderActivity::pageTurnImpl(bool isForward) {
   if (!xtc) return false;
   if (isForward) {
     if (currentPage < xtc->getPageCount()) {

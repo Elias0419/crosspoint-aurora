@@ -43,6 +43,11 @@ class HalDisplay {
   // modelled as energy-per-event, not milliamps-times-seconds). A hook rather
   // than a direct call because the HAL must not depend on application code.
   using RefreshObserver = void (*)();
+  // Called once per waveform sent to the panel, from every push path -- the
+  // plain buffer pushes AND the grayscale ones. Anti-aliased reader pages go
+  // out through displayGrayscaleFrame/Base, which is exactly the refresh worth
+  // counting, so leaving those out (as the first version did) undercounted the
+  // page turns it was meant to measure.
   void setRefreshObserver(RefreshObserver observer) { refreshObserver = observer; }
 
   void displayBuffer(RefreshMode mode = RefreshMode::FAST_REFRESH, bool turnOffScreen = false);

@@ -186,7 +186,7 @@ class EpubReaderActivity final : public ReaderActivity {
 
   void loop() override;
 
-  bool pageTurn(bool isForward) override;
+  bool pageTurnImpl(bool isForward) override;
   bool skipPages(int amount) override;
   bool isAtEndOfBook() const override;
   void onReturnFromEndOfBook() override;

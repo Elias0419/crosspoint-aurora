@@ -11,11 +11,18 @@
 #include <WiFi.h>
 #include <Wire.h>
 
+#include <cstring>
+
 #include "CrossPointSettings.h"
 
 namespace {
 
 constexpr const char* LOG_PATH = "/.crosspoint/battery.csv";
+constexpr const char* LOG_OLD_PATH = "/.crosspoint/battery-old.csv";
+constexpr const char* CSV_HEADER =
+    "uptime_s,rtc,event,remcap_mah,fcc_mah,mv,current_ma,soc,chrg_stat,pg,"
+    "cpu_mhz,fl_on,fl_pct,fl_on_ms,wifi_on_ms,hi_clock_ms,lsleep_ms,refreshes,page_turns,rows,"
+    "free_heap\n";
 constexpr unsigned long SAMPLE_INTERVAL_MS = 60UL * 1000UL;
 constexpr unsigned long ROW_INTERVAL_MS = 5UL * 60UL * 1000UL;
 
@@ -29,6 +36,8 @@ RTC_NOINIT_ATTR uint32_t logRowCount;
 RTC_NOINIT_ATTR uint32_t logFrontlightOnMs;
 RTC_NOINIT_ATTR uint32_t logWifiOnMs;
 RTC_NOINIT_ATTR uint32_t logHighClockMs;
+RTC_NOINIT_ATTR uint32_t logLightSleepMs;
+RTC_NOINIT_ATTR uint32_t logPageTurns;
 
 unsigned long lastSampleMs = 0;
 unsigned long lastRowMs = 0;
@@ -90,6 +99,19 @@ void accumulate() {
   if (getCpuFrequencyMhz() > 100) logHighClockMs += dt;
 }
 
+// True when the log on the card already carries today's columns (or there is
+// no log yet). Compares the stored first line against CSV_HEADER.
+bool schemaChecked() {
+  if (!Storage.exists(LOG_PATH)) return true;
+  HalFile file = Storage.open(LOG_PATH, O_RDONLY);
+  if (!file) return true;  // unreadable: leave it alone rather than destroy it
+  char stored[192] = {};
+  const int got = file.read(stored, sizeof(stored) - 1);
+  file.close();
+  if (got <= 0) return true;  // empty file: the header is about to be written
+  return strncmp(stored, CSV_HEADER, strlen(CSV_HEADER)) == 0;
+}
+
 void writeRow(const char* event) {
   if (!Storage.ready()) return;
 
@@ -101,6 +123,16 @@ void writeRow(const char* event) {
   readGauge16(0x2C, soc);
   uint8_t chargerStatus = 0;
   const bool chargerOk = readCharger8(0x0B, chargerStatus);
+
+  // A log written by an older firmware has fewer columns; appending today's
+  // rows to it would produce a file no parser can read. Retire it instead --
+  // once, before the first row of this session -- so the analysis always sees
+  // one consistent schema.
+  if (!headerChecked && !schemaChecked()) {
+    Storage.remove(LOG_OLD_PATH);
+    Storage.rename(LOG_PATH, LOG_OLD_PATH);
+    LOG_DBG("BATTLOG", "Column set changed; previous log kept as %s", LOG_OLD_PATH);
+  }
 
   // O_AT_END rather than the usual openFileForWrite(): that one passes O_TRUNC,
   // which would wipe the log on every row. Storage::open() takes raw SdFat
@@ -115,11 +147,7 @@ void writeRow(const char* event) {
   // continuous series rather than restarting each time.
   if (!headerChecked) {
     headerChecked = true;
-    if (file.fileSize() == 0) {
-      file.print(
-          "uptime_s,rtc,event,remcap_mah,fcc_mah,mv,current_ma,soc,chrg_stat,pg,"
-          "cpu_mhz,fl_on,fl_pct,fl_on_ms,wifi_on_ms,hi_clock_ms,refreshes,rows,free_heap\n");
-    }
+    if (file.fileSize() == 0) file.print(CSV_HEADER);
   }
 
   char rtcBuf[24] = "";
@@ -127,12 +155,13 @@ void writeRow(const char* event) {
 
   char line[256];
   const int n =
-      snprintf(line, sizeof(line), "%lu,%s,%s,%u,%u,%u,%d,%u,%d,%d,%u,%d,%u,%lu,%lu,%lu,%lu,%lu,%u\n",
+      snprintf(line, sizeof(line), "%lu,%s,%s,%u,%u,%u,%d,%u,%d,%d,%u,%d,%u,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%u\n",
                millis() / 1000UL, rtcBuf, event, remCap, fcc, mv, static_cast<int>(static_cast<int16_t>(rawCurrent)),
                soc, chargerOk ? ((chargerStatus >> 3) & 0x03) : -1, chargerOk ? ((chargerStatus & 0x04) ? 1 : 0) : -1,
                getCpuFrequencyMhz(), Frontlight.isOn() ? 1 : 0, Frontlight.brightness(),
                static_cast<unsigned long>(logFrontlightOnMs), static_cast<unsigned long>(logWifiOnMs),
-               static_cast<unsigned long>(logHighClockMs), static_cast<unsigned long>(logRefreshCount),
+               static_cast<unsigned long>(logHighClockMs), static_cast<unsigned long>(logLightSleepMs),
+               static_cast<unsigned long>(logRefreshCount), static_cast<unsigned long>(logPageTurns),
                static_cast<unsigned long>(logRowCount), ESP.getFreeHeap());
   if (n > 0) {
     file.print(line);
@@ -156,6 +185,8 @@ void begin() {
     logFrontlightOnMs = 0;
     logWifiOnMs = 0;
     logHighClockMs = 0;
+    logLightSleepMs = 0;
+    logPageTurns = 0;
   }
   display.setRefreshObserver(&noteDisplayRefresh);
 
@@ -187,5 +218,12 @@ void flushNow(const char* event) {
 }
 
 void noteDisplayRefresh() { ++logRefreshCount; }
+
+// millis() keeps counting across light sleep (the RTC timer runs), so the
+// caller's before/after delta is the real halted time; accumulate() would
+// otherwise charge it to whatever state the loop resumed in.
+void noteLightSleep(const uint32_t ms) { logLightSleepMs += ms; }
+
+void notePageTurn() { ++logPageTurns; }
 
 }  // namespace BatteryLog

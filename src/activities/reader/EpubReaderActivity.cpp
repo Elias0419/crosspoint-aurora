@@ -968,7 +968,7 @@ void EpubReaderActivity::toggleAutoPageTurn(const uint8_t selectedPageTurnOption
   }
 }
 
-bool EpubReaderActivity::pageTurn(bool isForwardTurn) {
+bool EpubReaderActivity::pageTurnImpl(bool isForwardTurn) {
   if (!section) return false;
   {
     RenderLock lock;
