@@ -418,12 +418,11 @@ void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
 
     const char* labels[kTileCount] = {tr(STR_NIGHT_MODE), tr(STR_FORCE_REFRESH),     orientLabel,
                                       touchLabel,         tr(STR_SCREENSHOT_BUTTON), tr(STR_SLEEP)};
-    const fui::State states[kTileCount] = {SETTINGS.screenInverted ? fui::StateChecked : fui::StateNormal,
-                                           fui::StateNormal, fui::StateNormal,
-                                           // Filled when touch reader controls are OFF — the non-default,
-                                           // attention-worthy state.
-                                           touchOn ? fui::StateNormal : fui::StateChecked, fui::StateNormal,
-                                           fui::StateNormal};
+    const fui::State states[kTileCount] = {
+        SETTINGS.screenInverted ? fui::StateChecked : fui::StateNormal, fui::StateNormal, fui::StateNormal,
+        // Filled when touch reader controls are OFF — the non-default,
+        // attention-worthy state.
+        touchOn ? fui::StateNormal : fui::StateChecked, fui::StateNormal, fui::StateNormal};
 
     for (int slot = 0; slot < tileCount; ++slot) {
       const int id = ids[slot];

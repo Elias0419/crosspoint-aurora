@@ -30,6 +30,11 @@ constexpr ThemeMetrics values = [] {
   // etched matte glass, so every shared surface (tab pills, popups, sliders)
   // uses solid black or outlines instead.
   v.oneBitChrome = true;
+  // iOS control-center shape: round tiles / step buttons, a soft sheet edge,
+  // and a full-stadium capsule slider (255 = radius of half the control).
+  v.controlRadius = 18;
+  v.sheetRadius = 22;
+  v.capsuleRadius = 255;
   return v;
 }();
 }  // namespace AuroraMetrics

@@ -303,9 +303,7 @@ bool HalGPIO::wasSwipe(float& nxStart, float& nyStart, float& nxEnd, float& nyEn
 
 // Injected touch counts as activity too: it comes from the serial debug
 // channel, not from the glass, but it is still someone driving the device.
-bool HalGPIO::wasTouchActivity() const {
-  return activeTouch != InjectTouch::None || (inputMgr.wasTouchActivity());
-}
+bool HalGPIO::wasTouchActivity() const { return activeTouch != InjectTouch::None || (inputMgr.wasTouchActivity()); }
 
 void HalGPIO::setSharedConfirmPowerShortPressEmitsPower(const bool enabled) {
   InputManager::setSharedConfirmPowerShortPressEmitsPower(enabled);
