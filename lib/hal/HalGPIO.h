@@ -62,10 +62,8 @@ class HalGPIO {
   InjectTouch activeTouch = InjectTouch::None;
   float injTouchX1 = 0, injTouchY1 = 0, injTouchX2 = 0, injTouchY2 = 0;
 
-  // Configurable action buttons + touch kill-switch (see setMaskedButtons /
-  // setTouchEnabled above).
+  // Configurable action buttons (see setMaskedButtons above).
   uint8_t maskedButtons = 0;
-  bool touchEnabled_ = true;
   bool masked(uint8_t buttonIndex) const { return (maskedButtons >> buttonIndex) & 1; }
 
  public:
@@ -109,10 +107,6 @@ class HalGPIO {
   bool rawWasPressed(uint8_t buttonIndex) const;
   bool rawWasReleased(uint8_t buttonIndex) const;
 
-  // Global touch kill-switch (a configurable button action). Only gates real
-  // digitizer input — serial-injected touch events keep working for debugging.
-  void setTouchEnabled(bool enabled) { touchEnabled_ = enabled; }
-  bool touchEnabled() const { return touchEnabled_; }
   unsigned long getHeldTime() const;
   unsigned long getPowerButtonHeldTime() const;
   bool hasTouch() const;

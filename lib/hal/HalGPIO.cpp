@@ -259,23 +259,23 @@ bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
     ny = injTouchY1;
     return true;
   }
-  return touchEnabled_ && inputMgr.wasTouchTap(nx, ny);
+  return inputMgr.wasTouchTap(nx, ny);
 }
 
-bool HalGPIO::wasTouchDown(float& nx, float& ny) const { return touchEnabled_ && inputMgr.wasTouchPressedAt(nx, ny); }
+bool HalGPIO::wasTouchDown(float& nx, float& ny) const { return inputMgr.wasTouchPressedAt(nx, ny); }
 
 bool HalGPIO::wasTouchReleased() const {
   // An injected tap is a full contact: report its release edge too.
-  return (touchEnabled_ && inputMgr.wasTouchReleased()) || activeTouch == InjectTouch::Tap;
+  return (inputMgr.wasTouchReleased()) || activeTouch == InjectTouch::Tap;
 }
 
 bool HalGPIO::isTouchTapCandidate(float& nx, float& ny, unsigned long& heldMs) const {
-  return touchEnabled_ && inputMgr.isTouchTapCandidate(nx, ny, heldMs);
+  return inputMgr.isTouchTapCandidate(nx, ny, heldMs);
 }
 
 bool HalGPIO::isPowerButtonPhysicallyPressed() const { return digitalRead(InputManager::POWER_BUTTON_PIN) == LOW; }
 
-bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return touchEnabled_ && inputMgr.isTouchHeldAt(nx, ny); }
+bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return inputMgr.isTouchHeldAt(nx, ny); }
 
 bool HalGPIO::wasTouchLongPress(float& nx, float& ny) const {
   if (activeTouch == InjectTouch::LongPress) {
@@ -283,7 +283,7 @@ bool HalGPIO::wasTouchLongPress(float& nx, float& ny) const {
     ny = injTouchY1;
     return true;
   }
-  return touchEnabled_ && inputMgr.wasTouchLongPress(nx, ny);
+  return inputMgr.wasTouchLongPress(nx, ny);
 }
 
 void HalGPIO::suppressTouchContact() { inputMgr.suppressTouchContact(); }
@@ -298,15 +298,13 @@ bool HalGPIO::wasSwipe(float& nxStart, float& nyStart, float& nxEnd, float& nyEn
     nyEnd = injTouchY2;
     return true;
   }
-  return touchEnabled_ && inputMgr.wasSwipe(nxStart, nyStart, nxEnd, nyEnd);
+  return inputMgr.wasSwipe(nxStart, nyStart, nxEnd, nyEnd);
 }
 
-// Gated with the rest: an ungated activity report would let a palm resting on
-// the glass hold the device awake while the kill-switch says touch is off.
-// Injected touch stays outside the gate, like the injected swipe above: it
-// comes from the serial debug channel, not from the glass.
+// Injected touch counts as activity too: it comes from the serial debug
+// channel, not from the glass, but it is still someone driving the device.
 bool HalGPIO::wasTouchActivity() const {
-  return activeTouch != InjectTouch::None || (touchEnabled_ && inputMgr.wasTouchActivity());
+  return activeTouch != InjectTouch::None || (inputMgr.wasTouchActivity());
 }
 
 void HalGPIO::setSharedConfirmPowerShortPressEmitsPower(const bool enabled) {

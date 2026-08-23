@@ -387,6 +387,21 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t tiltPageTurn = TILT_OFF;
   // Touch screen reader zones/gestures on boards with a touch controller.
   uint8_t touchReaderControls = TOUCH_READER_ON;
+  // Flip touchReaderControls between Off and the mode it was last on in (Tap /
+  // Swipe / Inverted Tap), for the control center tile and the "Touch On/Off"
+  // button action. Only this setting is touched -- nothing lower-level -- so
+  // the control center's own gestures keep working while it is off. The
+  // remembered mode is session-only (not persisted). Returns the new state.
+  bool toggleTouchReaderControls() {
+    if (touchReaderControls != TOUCH_READER_OFF) {
+      touchReaderRestore = touchReaderControls;
+      touchReaderControls = TOUCH_READER_OFF;
+      return false;
+    }
+    touchReaderControls = touchReaderRestore;
+    return true;
+  }
+  uint8_t touchReaderRestore = TOUCH_READER_ON;
   // Center-third tap opens the reader menu (0 = disabled, 1 = enabled). Only
   // surfaced on home-key boards, where the menu stays reachable without it.
   uint8_t tapForReaderMenu = 1;

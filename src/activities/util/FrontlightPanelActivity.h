@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CrossPointSettings.h"
 #include "activities/Activity.h"
 #include "components/UiAppHost.h"
 #include "util/ButtonNavigator.h"
@@ -8,8 +9,8 @@
 // or a button bound to "Control Center" (iOS Control Center style): a grabber,
 // the frontlight brightness/warmth sliders (on boards with a light), and a grid
 // of quick-setting tiles — night mode, ghost-cleanup refresh, reading
-// orientation, the touch kill-switch, a screenshot, and sleep, each of which the
-// user can hide (Settings -> Display -> Customise Control Center). The
+// orientation, reader touch controls on/off, a screenshot, and sleep, each of
+// which the user can hide (Settings -> Display -> Customise Control Center). The
 // frontlight controls are always there: they are what the panel is for. Pure
 // 1-bit: no dithered fills, selection reads as a filled tile. The grabber sits
 // along the panel's bottom edge, the edge the sheet is dragged from.
@@ -31,13 +32,21 @@ class FrontlightPanelActivity final : public Activity, private UiAppHost {
   bool draggingSlider = false;
   int panelBottom = 0;
 
-  // fui::ButtonProps embeds a 324-byte fui::StyleSet, so the two the render
-  // path fills in live here instead of on the stack (AGENTS.md: locals stay
-  // under 256 bytes). ui::button() takes them by const reference and draws
-  // immediately, so one instance per call site is enough — every field either
-  // is reassigned on each use or keeps its constructed default.
-  freeink::ui::ButtonProps stepProps;
-  freeink::ui::ButtonProps tileProps;
+  // Quick-setting tiles, in grid order (2 columns): night mode, refresh,
+  // orientation, touch, screenshot, sleep. This is the catalogue size; which of
+  // them are laid out is a user setting (Settings -> Display -> Customise
+  // Control Center), so the grid may be shorter or empty.
+  static constexpr int kTileCount = 6;
+
+  // fui::SliderRowProps and fui::TileGridProps embed a 324-byte fui::StyleSet,
+  // so the props the render path fills in live here instead of on the stack
+  // (AGENTS.md: locals stay under 256 bytes). The components take them by
+  // const reference and draw immediately, so one instance per call site is
+  // enough — every field either is reassigned on each use or keeps its
+  // constructed default.
+  freeink::ui::SliderRowProps rowProps;
+  freeink::ui::TileGridProps gridProps;
+  freeink::ui::TileGridItem gridItems[kTileCount];
 
   static void panelScreen(UiScreen& screen, void* user);
   static void onBrightnessEvent(const freeink::ui::ActionEvent& event, void* user);
@@ -59,17 +68,15 @@ class FrontlightPanelActivity final : public Activity, private UiAppHost {
   void toggleLight();
   void runTile(int idx);
   // Copy the panel's live brightness/warmth/lightOn into SETTINGS and save if
-  // anything actually changed. onExit() runs it on the ordinary way out; the
-  // sleep tile has to run it itself, because enterDeepSleep() never returns.
+  // anything actually changed. onExit() runs it on every way out (the sleep
+  // tile closes the panel first, so it is covered too).
   void persistLightSettings();
   void close();
 
-  // Quick-setting tiles, in grid order (2 columns). This is the catalogue size;
-  // which of them are laid out is a user setting (Settings -> Display ->
-  // Customise Control Center), so the grid may be shorter or empty.
-  static constexpr int kTileCount = 6;
-  // One-shot: the "refresh" tile re-drives the whole frame with the
-  // ghost-cleanup waveform on the next render.
+  // One-shot: a tile that rewrote the whole frame (night mode) re-drives it
+  // with the ghost-cleanup waveform on the next render. The "refresh" tile does
+  // not use this — it closes the panel and promotes the repaint underneath
+  // instead (GfxRenderer::promoteNextRefresh).
   bool cleanRefreshPending = false;
 
  public:

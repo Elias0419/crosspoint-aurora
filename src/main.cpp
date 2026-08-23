@@ -389,6 +389,27 @@ void enterDeepSleep(bool fromTimeout = false) {
 // Brief on-screen confirmation for an action with no visible surface of its
 // own (the touch kill-switch). Deliberately blocking: the user just pressed a
 // key and the panel needs long enough to be read.
+// One-shot action the control center asks for on its way out (screenshot /
+// sleep tiles): it must run only after the panel has closed and the screen
+// underneath has repainted, which the panel itself can't wait for.
+static int deferredPanelAction = 0;
+void requestActionAfterPanelClose(const int action) { deferredPanelAction = action; }
+
+static void runDeferredPanelAction() {
+  const int action = deferredPanelAction;
+  if (action == 0) return;
+  deferredPanelAction = 0;
+  // The panel's finish() queued the repaint of the activity below; wait for
+  // it so the framebuffer holds that screen, not the sheet.
+  activityManager.requestUpdateAndWait();
+  if (action == 1) {
+    RenderLock lock;
+    ScreenshotUtil::takeScreenshot(renderer);
+  } else if (action == 2) {
+    enterDeepSleep();
+  }
+}
+
 static void showActionToast(const char* text) {
   {
     RenderLock lock;
@@ -445,9 +466,12 @@ static bool runButtonAction(const uint8_t action) {
       return true;
     }
     case CrossPointSettings::BTN_ACT_TOUCH_TOGGLE: {
-      const bool enabled = !gpio.touchEnabled();
-      gpio.setTouchEnabled(enabled);
-      LOG_INF("MAIN", "Touch input %s by button action", enabled ? "enabled" : "disabled");
+      // Toggles the reader's touch controls setting (same as the control center
+      // tile), not a digitizer kill-switch: the UI stays tappable, only the
+      // reader's page-turn taps/swipes go quiet for a palm on the glass.
+      const bool enabled = SETTINGS.toggleTouchReaderControls();
+      SETTINGS.saveToFile();
+      LOG_INF("MAIN", "Touch reader controls %s by button action", enabled ? "enabled" : "disabled");
       showActionToast(enabled ? tr(STR_TOUCH_ENABLED) : tr(STR_TOUCH_DISABLED));
       return true;
     }
@@ -1872,6 +1896,7 @@ void loop() {
 
   const unsigned long activityStartTime = millis();
   activityManager.loop();
+  runDeferredPanelAction();
   const unsigned long activityDuration = millis() - activityStartTime;
 
   const unsigned long loopDuration = millis() - loopStartTime;
