@@ -168,6 +168,23 @@ class HalGPIO {
   // Check if USB is connected
   bool isUsbConnected() const;
 
+  // Charging state for the battery indicator. Deliberately separate from
+  // isUsbConnected(): that one feeds wake-reason classification, where changing
+  // the answer changes boot behaviour (see getWakeupReason). This one is free to
+  // ask the charger IC / fuel gauge over I2C on boards that have no usbDetect
+  // pin at all -- the LilyGo T5 S3 is one, which is why its battery icon never
+  // showed a charging bolt. Cached: the read is a multi-register I2C
+  // transaction on a bus shared with the panel PMIC, far too slow per frame.
+  bool isCharging() const;
+
+  // True when the charger IC says it has finished topping the pack off while
+  // external power is present (BQ25896 CHRG_STAT = 0b11 with PG_STAT set).
+  // The fuel gauge cannot answer this on its own -- see HalPowerManager::
+  // getBatteryPercentage() for why the reported percentage needs it.
+  bool isChargeComplete() const;
+
+  static constexpr unsigned long CHARGE_POLL_MS = 1500;
+
   // Returns true once per edge (plug or unplug) since the last update()
   bool wasUsbStateChanged() const;
 

@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <BatteryMonitor.h>
 #include <BoardConfig.h>
+#include <Wire.h>
 #if FREEINK_DEVICE_LILYGO
 #include <BoardT5S3.h>
 #endif
@@ -794,6 +795,270 @@ void setup() {
   allowSleepAt = millis() + 2000;
 }
 
+// --- Power-draw instrumentation (CMD:PWR / CMD:HIZ) ---------------------------
+// Measuring idle consumption is the only way to tell whether a power change is
+// worth its risk, and the board already carries the meter: a BQ27220 fuel gauge
+// (0x55) plus a BQ25896 charger (0x6B) on the shared I2C bus. BatteryMonitor
+// reads three of the gauge's registers but exposes no current, so these two
+// commands go straight to the silicon.
+//
+// The catch: with USB attached, VBUS feeds SYS and the gauge sees only the
+// CHARGE current, never the system load — so a naive reading over the serial
+// cable is meaningless. CMD:HIZ works around it. Setting the BQ25896's EN_HIZ
+// bit disconnects the charger's input stage from VBUS, so SYS is drawn entirely
+// from the battery while the USB DATA lines stay up and the serial console
+// survives. Current() then reports true system draw. Clear it to resume
+// charging.
+//
+// Register maps are deliberately NOT hardcoded beyond the three the codebase has
+// already proven on hardware (Voltage 0x08, Current 0x0C, StateOfCharge 0x2C in
+// BatteryMonitor.cpp). The rest of the standard command space is dumped raw so
+// the coulomb counter can be identified from real values rather than from a
+// datasheet transcription that may not match this part.
+namespace {
+
+// The gauge's I2C controller, mirroring BatteryMonitor::gaugeWire().
+TwoWire& debugGaugeWire() {
+#if SOC_I2C_NUM > 1
+  if (BoardConfig::ACTIVE.batteryGauge.i2cBus == 1) return Wire1;
+#endif
+  return Wire;
+}
+
+// Gauge commands are 16-bit little-endian; charger registers are single bytes.
+bool debugReadReg16(uint8_t addr, uint8_t reg, uint16_t& out) {
+  if (addr == 0) return false;
+  TwoWire& bus = debugGaugeWire();
+  bus.beginTransmission(addr);
+  bus.write(reg);
+  if (bus.endTransmission(false) != 0) return false;
+  if (bus.requestFrom(static_cast<int>(addr), 2) != 2) return false;
+  const uint8_t lo = bus.read();
+  const uint8_t hi = bus.read();
+  out = static_cast<uint16_t>(lo | (hi << 8));
+  return true;
+}
+
+bool debugReadReg8(uint8_t addr, uint8_t reg, uint8_t& out) {
+  if (addr == 0) return false;
+  TwoWire& bus = debugGaugeWire();
+  bus.beginTransmission(addr);
+  bus.write(reg);
+  if (bus.endTransmission(false) != 0) return false;
+  if (bus.requestFrom(static_cast<int>(addr), 1) != 1) return false;
+  out = bus.read();
+  return true;
+}
+
+bool debugWriteReg8(uint8_t addr, uint8_t reg, uint8_t value) {
+  if (addr == 0) return false;
+  TwoWire& bus = debugGaugeWire();
+  bus.beginTransmission(addr);
+  bus.write(reg);
+  bus.write(value);
+  return bus.endTransmission() == 0;
+}
+
+// Dump everything the power block can tell us. Decoded values first (the three
+// registers BatteryMonitor already trusts), then raw blocks.
+void dumpPowerTelemetry() {
+  const auto& g = BoardConfig::ACTIVE.batteryGauge;
+  if (g.gaugeAddr == 0) {
+    logSerial.printf("PWR_ERR:no_gauge\n");
+    return;
+  }
+
+  // Bring the bus up the same way a normal battery read would, so this works
+  // even if nothing has polled the gauge yet this boot.
+  static const BatteryMonitor debugBattery;
+  const auto st = debugBattery.readStatus();
+
+#if FREEINK_DEVICE_LILYGO
+  // The T5S3's I2C bus is shared with the PCA9535, the EPD PMIC and the
+  // digitizer; take the board mutex so a refresh in flight cannot interleave.
+  BoardT5S3::ScopedI2CLock lock;
+#endif
+
+  uint16_t mv = 0, cur = 0, soc = 0;
+  const bool mvOk = debugReadReg16(g.gaugeAddr, 0x08, mv);
+  const bool curOk = debugReadReg16(g.gaugeAddr, 0x0C, cur);
+  const bool socOk = debugReadReg16(g.gaugeAddr, 0x2C, soc);
+  // Current() is signed: negative = discharging (this is what we want to read),
+  // positive = charging.
+  const int16_t curMa = static_cast<int16_t>(cur);
+  logSerial.printf("PWR: mv=%u(ok=%d) current_ma=%d(ok=%d) soc=%u(ok=%d) charging=%d ext=%d ms=%lu\n", mv, mvOk, curMa,
+                   curOk, soc, socOk, st.charging, st.externalPower, millis());
+
+  // Raw standard-command space, 8 words per line: small writes so HWCDC's TX
+  // ring never overruns (see the SCREENSHOT dump for the same constraint).
+  for (uint8_t base = 0x00; base < 0x40; base += 0x10) {
+    char line[128];
+    int n = snprintf(line, sizeof(line), "PWR_GAUGE:%02X:", base);
+    for (uint8_t off = 0; off < 0x10 && n > 0 && n < static_cast<int>(sizeof(line)); off += 2) {
+      uint16_t w = 0;
+      const bool ok = debugReadReg16(g.gaugeAddr, static_cast<uint8_t>(base + off), w);
+      n += snprintf(line + n, sizeof(line) - n, ok ? " %04X" : " ----", w);
+    }
+    logSerial.printf("%s\n", line);
+    logSerial.flush();
+  }
+
+  if (g.chargerAddr != 0) {
+    char line[160];
+    int n = snprintf(line, sizeof(line), "PWR_CHG:");
+    for (uint8_t reg = 0x00; reg <= 0x14 && n > 0 && n < static_cast<int>(sizeof(line)); ++reg) {
+      uint8_t v = 0;
+      const bool ok = debugReadReg8(g.chargerAddr, reg, v);
+      n += snprintf(line + n, sizeof(line) - n, ok ? " %02X" : " --", v);
+    }
+    logSerial.printf("%s\n", line);
+    uint8_t reg00 = 0;
+    if (debugReadReg8(g.chargerAddr, 0x00, reg00)) {
+      logSerial.printf("PWR_HIZ:%d\n", (reg00 & 0x80) ? 1 : 0);
+    }
+  }
+  logSerial.flush();
+}
+
+// Toggle BQ25896 EN_HIZ (REG00 bit 7). Read back so the caller sees what the
+// charger actually latched rather than what we asked for.
+void setChargerHiz(bool enable) {
+  const auto& g = BoardConfig::ACTIVE.batteryGauge;
+  if (g.chargerAddr == 0) {
+    logSerial.printf("HIZ_ERR:no_charger\n");
+    return;
+  }
+#if FREEINK_DEVICE_LILYGO
+  BoardT5S3::ScopedI2CLock lock;
+#endif
+  uint8_t reg00 = 0;
+  if (!debugReadReg8(g.chargerAddr, 0x00, reg00)) {
+    logSerial.printf("HIZ_ERR:read\n");
+    return;
+  }
+  const uint8_t updated = enable ? static_cast<uint8_t>(reg00 | 0x80) : static_cast<uint8_t>(reg00 & 0x7F);
+  if (!debugWriteReg8(g.chargerAddr, 0x00, updated)) {
+    logSerial.printf("HIZ_ERR:write\n");
+    return;
+  }
+  uint8_t verify = 0;
+  debugReadReg8(g.chargerAddr, 0x00, verify);
+  logSerial.printf("HIZ_OK:%d reg00=%02X->%02X\n", (verify & 0x80) ? 1 : 0, reg00, verify);
+}
+
+}  // namespace
+
+// --- Low-battery protection ---------------------------------------------------
+// Nothing in the firmware used to watch the battery: getBatteryPercentage() fed
+// the status-bar glyph and nothing else, so the reader ran flat out until the
+// hardware cut power mid-page. Reading position survives that (saveProgress()
+// runs on every page change), but the reader dying without warning does not
+// make for a device you trust on a trip.
+//
+// Phone-shaped policy: warn once, warn harder, then put itself away safely
+// rather than being switched off by physics.
+namespace {
+constexpr uint16_t BATTERY_WARN_PCT = 15;     // first notice
+constexpr uint16_t BATTERY_CRITICAL_PCT = 5;  // last notice
+constexpr uint16_t BATTERY_SHUTDOWN_PCT = 2;  // save and sleep
+// Voltage backstop, and NOT redundant with the percentage above. The gauge's
+// scale is calibrated to its own terminate voltage, while this board browns out
+// when the 3.3 V regulator runs out of headroom -- which happens at a HIGHER
+// voltage, i.e. while the gauge still reports several percent left. Without
+// this rule the 2% shutdown could simply never be reached. 3.40 V is a loaded
+// Li-ion pack with very little usable charge left, and comfortably above any
+// plausible regulator dropout.
+constexpr uint16_t BATTERY_SHUTDOWN_MV = 3400;
+// Re-arm each warning only after a clear recovery, so a percentage dithering
+// across the threshold cannot pop the same toast every few seconds.
+constexpr uint16_t BATTERY_REARM_MARGIN_PCT = 3;
+
+bool warnedLowBattery = false;
+bool warnedCriticalBattery = false;
+
+#ifdef ENABLE_SERIAL_LOG
+// CMD:BATTSIM:<pct>[:<mv>] overrides the readings so the thresholds below can be
+// exercised on a full battery -- the one code path you cannot afford to ship
+// untested is the one that only ever runs when the device is nearly dead.
+// CMD:BATTSIM:-1 returns to the real gauge.
+int simBatteryPct = -1;
+int simBatteryMv = -1;
+#endif
+
+// Returns true when it has taken over the frame (a toast was shown, or the
+// device is on its way to sleep and the caller must not keep running).
+bool checkLowBattery() {
+#ifdef ENABLE_SERIAL_LOG
+  // An override also has to bypass the charging gate below, or the feature
+  // stays untestable: the only way to hold a serial console is over the same
+  // cable that makes isCharging() true.
+  const bool simulating = simBatteryPct >= 0;
+#else
+  constexpr bool simulating = false;
+#endif
+
+  // On the cable there is nothing to protect against, and the reading is the
+  // charger's business anyway. Clear the latches so an unplug starts fresh.
+  if (!simulating && gpio.isCharging()) {
+    warnedLowBattery = false;
+    warnedCriticalBattery = false;
+    return false;
+  }
+
+  uint16_t pct = powerManager.getBatteryPercentage();
+  uint16_t mv = powerManager.getBatteryMillivolts();
+#ifdef ENABLE_SERIAL_LOG
+  if (simBatteryPct >= 0) pct = static_cast<uint16_t>(simBatteryPct);
+  if (simBatteryMv >= 0) mv = static_cast<uint16_t>(simBatteryMv);
+#endif
+
+  // A board with no battery telemetry at all reports 0% forever; that must not
+  // read as "empty" and sleep the device on every boot.
+  if (pct == 0 && mv == 0) {
+    return false;
+  }
+
+  const bool voltageCritical = mv != 0 && mv <= BATTERY_SHUTDOWN_MV;
+  if (pct <= BATTERY_SHUTDOWN_PCT || voltageCritical) {
+    LOG_INF("BATT", "Low-battery shutdown: %u%%, %u mV", pct, mv);
+    {
+      RenderLock lock;
+      GUI.drawPopup(renderer, tr(STR_BATTERY_SHUTDOWN));
+    }
+    delay(2000);  // long enough to read before the panel retains the sleep frame
+    enterDeepSleep();
+    return true;
+  }
+
+  if (pct <= BATTERY_CRITICAL_PCT) {
+    if (!warnedCriticalBattery) {
+      warnedCriticalBattery = true;
+      LOG_INF("BATT", "Critical-battery warning: %u%%, %u mV", pct, mv);
+      showActionToast(tr(STR_BATTERY_CRITICAL));
+      return true;
+    }
+    return false;
+  }
+  if (pct > BATTERY_CRITICAL_PCT + BATTERY_REARM_MARGIN_PCT) {
+    warnedCriticalBattery = false;
+  }
+
+  if (pct <= BATTERY_WARN_PCT) {
+    if (!warnedLowBattery) {
+      warnedLowBattery = true;
+      LOG_INF("BATT", "Low-battery warning: %u%%, %u mV", pct, mv);
+      showActionToast(tr(STR_BATTERY_LOW));
+      return true;
+    }
+    return false;
+  }
+  if (pct > BATTERY_WARN_PCT + BATTERY_REARM_MARGIN_PCT) {
+    warnedLowBattery = false;
+  }
+  return false;
+}
+}  // namespace
+
 void loop() {
   static unsigned long maxLoopDuration = 0;
   const unsigned long loopStartTime = millis();
@@ -943,6 +1208,29 @@ void loop() {
         logSerial.printf("BATT: pct=%u(known=%d) mv=%u(known=%d) charging=%d(known=%d) ext=%d(known=%d)\n",
                          st.percentage, st.percentageKnown, st.millivolts, st.millivoltsKnown, st.charging,
                          st.chargingKnown, st.externalPower, st.externalPowerKnown);
+      } else if (cmd == "PWR") {
+        // Power-draw snapshot. Pair with CMD:HIZ:1 or the current reading is
+        // the charge current, not the system load.
+        dumpPowerTelemetry();
+      } else if (cmd.startsWith("BATTSIM:")) {
+#ifdef ENABLE_SERIAL_LOG
+        // CMD:BATTSIM:<pct>[:<mv>] -- see simBatteryPct.
+        String rest = cmd.substring(8);
+        const int colon = rest.indexOf(':');
+        if (colon >= 0) {
+          simBatteryMv = rest.substring(colon + 1).toInt();
+          rest = rest.substring(0, colon);
+        }
+        simBatteryPct = rest.toInt();
+        if (simBatteryPct < 0) simBatteryMv = -1;  // one switch turns the whole override off
+        warnedLowBattery = false;
+        warnedCriticalBattery = false;
+        logSerial.printf("BATTSIM_OK:pct=%d mv=%d\n", simBatteryPct, simBatteryMv);
+#endif
+      } else if (cmd.startsWith("HIZ:")) {
+        // CMD:HIZ:1 runs the board off its battery with USB still attached, so
+        // the gauge measures real consumption; CMD:HIZ:0 restores charging.
+        setChargerHiz(cmd.substring(4).toInt() != 0);
       }
     }
   }
@@ -1012,6 +1300,12 @@ void loop() {
     mappedInputManager.setPowerConfirmClickFrame(true);
   }
 #endif
+
+  // Sits with the other sleep guards, and after them: a device that is already
+  // going to sleep for its own reasons does not need a battery toast first.
+  if (millis() >= allowSleepAt && checkLowBattery()) {
+    return;
+  }
 
   const unsigned long sleepTimeoutMs = SETTINGS.getSleepTimeoutMs();
   if (sleepTimeoutMs > 0 && millis() - lastActivityTime >= sleepTimeoutMs) {

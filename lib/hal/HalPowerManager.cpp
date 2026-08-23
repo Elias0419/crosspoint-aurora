@@ -132,6 +132,22 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
 
 uint16_t HalPowerManager::getBatteryPercentage() const {
   static const BatteryMonitor battery;
+
+  // A BQ27220 derives its percentage from RemainingCapacity / FullChargeCapacity,
+  // and FullChargeCapacity is only corrected by a qualifying learning cycle. On a
+  // pack that has never run one the divisor stays at the DESIGN capacity, so a
+  // fully charged battery lands a couple of points short and the reader can never
+  // display 100%. Measured on the LilyGo T5 S3: RemainingCapacity 1462 mAh against
+  // a FullChargeCapacity of 1500 mAh = 97.5%, reported as 98% -- with the charger
+  // simultaneously reporting charge termination, i.e. the pack IS full.
+  //
+  // Trust the charger over the gauge's arithmetic for that one case: when the
+  // charge controller says it has terminated, the battery is full by the only
+  // definition the hardware has.
+  if (gpio.isChargeComplete()) {
+    return 100;
+  }
+
   if (BoardConfig::ACTIVE.batteryGauge.gaugeAddr != 0) {
     const unsigned long now = millis();
     if (_batteryLastPollMs != 0 && (now - _batteryLastPollMs) < BATTERY_POLL_MS) {
@@ -154,6 +170,20 @@ uint16_t HalPowerManager::getBatteryPercentage() const {
     _batteryCachedPercent = (_batteryCachedPercent * 9 + battery.readPercentage() * 10) / 10;
   }
   return _batteryCachedPercent / 10;
+}
+
+uint16_t HalPowerManager::getBatteryMillivolts() const {
+  static const BatteryMonitor battery;
+  const unsigned long now = millis();
+  if (_millivoltsLastPollMs != 0 && (now - _millivoltsLastPollMs) < BATTERY_POLL_MS) {
+    return _batteryCachedMillivolts;
+  }
+  _millivoltsLastPollMs = now;
+  const auto status = battery.readStatus();
+  if (status.millivoltsKnown) {
+    _batteryCachedMillivolts = status.millivolts;
+  }
+  return _batteryCachedMillivolts;
 }
 
 HalPowerManager::Lock::Lock() {

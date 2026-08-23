@@ -17,8 +17,10 @@ class HalPowerManager {
   int normalFreq = 0;  // MHz
   bool isLowPower = false;
 
-  mutable int _batteryCachedPercent = 0;         // Last read battery percentage (0-100)
-  mutable unsigned long _batteryLastPollMs = 0;  // Timestamp of last battery read in milliseconds
+  mutable int _batteryCachedPercent = 0;            // Last read battery percentage (0-100)
+  mutable unsigned long _batteryLastPollMs = 0;     // Timestamp of last battery read in milliseconds
+  mutable uint16_t _batteryCachedMillivolts = 0;    // Last read pack voltage, 0 = never read
+  mutable unsigned long _millivoltsLastPollMs = 0;  // Its own timestamp: the two reads are independent
 
   enum LockMode { None, NormalSpeed };
   LockMode currentLockMode = None;
@@ -44,6 +46,14 @@ class HalPowerManager {
 
   // Get battery percentage (range 0-100)
   uint16_t getBatteryPercentage() const;
+
+  // Pack voltage in millivolts, 0 when the board cannot report one. Needed
+  // alongside the percentage because the two disagree near empty: the gauge's
+  // 0% is calibrated to its own terminate voltage, while the board browns out
+  // when the 3.3 V regulator runs out of headroom -- a higher voltage, and so a
+  // NON-zero percentage. Voltage is the quantity that actually predicts the
+  // cutoff, so the low-battery shutdown watches both.
+  uint16_t getBatteryMillivolts() const;
 
   // RAII helper class to manage power saving locks
   // Usage: create an instance of Lock in a scope to disable power saving, for example when running a task that needs

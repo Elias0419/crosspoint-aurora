@@ -1,3 +1,4 @@
+#include <BatteryMonitor.h>
 #include <HalGPIO.h>
 #include <Logging.h>
 #include <PowerManager.h>
@@ -164,7 +165,10 @@ void HalGPIO::update() {
   activeTouch = pendingTouch;
   pendingTouch = InjectTouch::None;
 
-  const bool connected = isUsbConnected();
+  // Track the CHARGING state, not the raw detect pin: boards with no usbDetect
+  // GPIO would otherwise never report an edge, and main.cpp uses this edge to
+  // repaint the battery icon when the cable goes in or out.
+  const bool connected = isCharging();
   usbStateChanged = (connected != lastUsbConnected);
   lastUsbConnected = connected;
 }
@@ -360,6 +364,75 @@ bool HalGPIO::verifyPowerButtonWakeup(uint16_t requiredDurationMs, bool shortPre
     return false;
   }
   return true;
+}
+
+namespace {
+// Cached BQ25896 status register (REG0B). Both charging questions below come
+// from this one byte, so it is read once per interval rather than once per
+// question -- this is I2C on a bus shared with the panel PMIC.
+bool readChargerStatusCached(uint8_t& out) {
+  const auto& g = BoardConfig::ACTIVE.batteryGauge;
+  if (g.chargerAddr == 0) return false;
+
+  static unsigned long lastPollMs = 0;
+  static uint8_t cachedStatus = 0;
+  static bool cachedOk = false;
+
+  const unsigned long now = millis();
+  if (lastPollMs != 0 && now - lastPollMs < HalGPIO::CHARGE_POLL_MS) {
+    out = cachedStatus;
+    return cachedOk;
+  }
+  lastPollMs = now;
+
+  constexpr uint8_t BQ25896_REG_STATUS = 0x0B;
+  TwoWire& bus =
+#if SOC_I2C_NUM > 1
+      (g.i2cBus == 1) ? Wire1 :
+#endif
+                      Wire;
+  bus.beginTransmission(g.chargerAddr);
+  bus.write(BQ25896_REG_STATUS);
+  cachedOk = bus.endTransmission(false) == 0 && bus.requestFrom(static_cast<int>(g.chargerAddr), 1) == 1;
+  if (cachedOk) cachedStatus = bus.read();
+  out = cachedStatus;
+  return cachedOk;
+}
+}  // namespace
+
+bool HalGPIO::isCharging() const {
+  // A dedicated detect pin is instant and authoritative wherever a board has one.
+  if (BoardConfig::ACTIVE.usbDetect >= 0) {
+    return digitalRead(BoardConfig::ACTIVE.usbDetect) == HIGH;
+  }
+
+  // Prefer PG_STAT (power good) over the charger's CHRG_STAT. The question the
+  // battery icon answers is "am I on the cable?", and CHRG_STAT cannot answer
+  // it: once the pack tops off, the charger moves to 0b11 (termination done)
+  // and BatteryMonitor::isCharging() -- which only accepts pre-charge (0b01) or
+  // fast-charge (0b10) -- goes false while the cable is still plugged in. On
+  // this board that is the NORMAL resting state, so the icon would spend most
+  // of its plugged-in life looking exactly like an unplugged one. PG_STAT stays
+  // set for as long as valid external power is present (verified on hardware:
+  // it survives even an EN_HIZ input disconnect), which is what a phone's
+  // charging glyph reports too.
+  constexpr uint8_t BQ25896_PG_STAT = 1u << 2;
+  uint8_t status = 0;
+  if (readChargerStatusCached(status)) {
+    return (status & BQ25896_PG_STAT) != 0;
+  }
+
+  // No charger IC (or the read failed): fall back to the gauge's own view.
+  static const BatteryMonitor chargeMonitor;
+  return chargeMonitor.isCharging();
+}
+
+bool HalGPIO::isChargeComplete() const {
+  constexpr uint8_t BQ25896_PG_STAT = 1u << 2;
+  constexpr uint8_t BQ25896_CHRG_DONE = 0x03;  // CHRG_STAT bits [4:3]
+  uint8_t status = 0;
+  if (!readChargerStatusCached(status)) return false;
+  return (status & BQ25896_PG_STAT) != 0 && ((status >> 3) & 0x03) == BQ25896_CHRG_DONE;
 }
 
 bool HalGPIO::isUsbConnected() const {
