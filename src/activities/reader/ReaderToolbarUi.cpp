@@ -237,6 +237,10 @@ void ReaderToolbarUi::buildHeader(UiScreen& screen) {
   screen.target().fill(
       fui::Rect{static_cast<int16_t>(tab.x - 1), static_cast<int16_t>(tab.y + 2), 4, static_cast<int16_t>(btnH - 4)},
       paper);
+  // Bridge the arrow's ends into the body's top/bottom borders (the stroke
+  // keeps clear of the open left edge), so the outline is one closed wire.
+  screen.target().fill(fui::Rect{static_cast<int16_t>(tab.x - 1), tab.y, 10, 2}, ink);
+  screen.target().fill(fui::Rect{static_cast<int16_t>(tab.x - 1), static_cast<int16_t>(tab.bottom() - 2), 10, 2}, ink);
   const int half = btnH / 2;
   for (int dy = 0; dy < btnH; ++dy) {
     const int dist = dy < half ? half - dy : dy - half;  // 0 at the tip row
