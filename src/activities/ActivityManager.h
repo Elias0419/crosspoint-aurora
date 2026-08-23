@@ -111,6 +111,22 @@ class ActivityManager {
   bool isReaderActivity() const;
   bool handleForcedRefresh();
   bool skipLoopDelay() const;
+
+  // True only when the reader itself is the ACTIVE activity -- not merely
+  // somewhere in the stack, which is what isReaderActivity() reports and which
+  // stays true with the reader menu open on top of it. Idle light sleep is
+  // restricted to this state deliberately: a page sitting on screen mid-book is
+  // the one place where nothing is expected to happen for a long time, and
+  // every other screen (home, menus, settings, transfer) either has work in
+  // flight or expects prompt input.
+  bool isReaderOnTop() const;
+
+  // True while a render is queued or in flight. Light sleep halts BOTH cores,
+  // not just the caller's, so sleeping here freezes the render task partway
+  // through its waveform and leaves a half-drawn panel. The first page of a
+  // chapter is the longest render (the whole section has to be paginated), so
+  // it was the one that reliably came up blank.
+  bool isRenderBusy() const;
   ScreenshotInfo getScreenshotInfo() const;
 
   // If immediate is true, the update will be triggered immediately.

@@ -339,6 +339,16 @@ bool ActivityManager::isReaderActivity() const {
 
 bool ActivityManager::handleForcedRefresh() { return currentActivity && currentActivity->handleForcedRefresh(); }
 
+bool ActivityManager::isReaderOnTop() const { return currentActivity && currentActivity->isReaderActivity(); }
+
+bool ActivityManager::isRenderBusy() const {
+  if (requestedUpdate.load()) return true;  // queued, not started yet
+  // Probe without blocking: the render task holds this for the whole draw.
+  if (xSemaphoreTake(renderingMutex, 0) != pdTRUE) return true;
+  xSemaphoreGive(renderingMutex);
+  return false;
+}
+
 bool ActivityManager::skipLoopDelay() const { return currentActivity && currentActivity->skipLoopDelay(); }
 
 ScreenshotInfo ActivityManager::getScreenshotInfo() const {

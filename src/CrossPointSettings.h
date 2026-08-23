@@ -349,6 +349,13 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t uiTheme = LYRA;
   // Sunlight fading compensation
   uint8_t fadingFix = 0;
+
+  // Put the SoC into light sleep between page turns instead of spinning on
+  // delay(). Measured on the LilyGo T5 S3: 40 mA -> 8 mA while a page sits on
+  // screen, a 5x cut. Default on; the toggle exists because a wake source that
+  // misbehaves on some board would show up as a sluggish button rather than as
+  // an obvious fault, and that needs to be switchable without a reflash.
+  uint8_t lightSleepIdle = 1;
   // Power button return from footnotes (1 = enabled, 0 = disabled)
   uint8_t pwrBtnFootnoteBack = 1;
   // Use book's embedded CSS styles for EPUB rendering (1 = enabled, 0 = disabled)
@@ -472,8 +479,6 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   float getReaderLineCompression() const;
   unsigned long getSleepTimeoutMs() const;
   int getRefreshFrequency() const;
-
-
 };
 
 // Helper macro to access settings

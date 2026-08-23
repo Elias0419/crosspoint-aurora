@@ -24,11 +24,13 @@
 #include <XteinkDetect.h>
 #include <builtinFonts/all.h>
 #if FREEINK_CAP_TOUCH
+#include <esp_sleep.h>
 #include <esp_sntp.h>
 #endif
 
 #include <cstring>
 
+#include "BatteryLog.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "KOReaderCredentialStore.h"
@@ -190,6 +192,22 @@ unsigned long t1 = 0;
 unsigned long t2 = 0;
 
 // Definitions for SilentRestart.h. RTC_NOINIT survives ESP.restart() but not power loss.
+// Light-sleep probe results, in RTC memory rather than printed live. Entering
+// light sleep kills the USB-Serial/JTAG console for good (the device keeps
+// running fine -- only the console dies, until the cable is replugged), so the
+// probe cannot report over the same channel it just switched off. RTC_NOINIT
+// survives both a bare console loss and a reset, covering either recovery.
+#define LSLEEP_RESULT_MAGIC 0x4C534C50u  // 'LSLP'
+RTC_NOINIT_ATTR uint32_t lsleepMagic;
+RTC_NOINIT_ATTR uint32_t lsleepIterations;
+RTC_NOINIT_ATTR uint32_t lsleepElapsedMs;
+RTC_NOINIT_ATTR uint32_t lsleepRemCapStart;
+RTC_NOINIT_ATTR uint32_t lsleepRemCapEnd;
+RTC_NOINIT_ATTR uint32_t lsleepTimerWakes;
+RTC_NOINIT_ATTR uint32_t lsleepGpioWakes;
+RTC_NOINIT_ATTR int32_t lsleepCurrentMa;
+RTC_NOINIT_ATTR uint32_t lsleepReachedEnd;  // 0 until the loop actually finished
+
 RTC_NOINIT_ATTR uint32_t silentRebootMagic;
 RTC_NOINIT_ATTR uint32_t silentRebootTarget;
 constexpr uint32_t SILENT_REBOOT_MAGIC = 0xC1EAB007;
@@ -329,6 +347,9 @@ void enterDeepSleep(bool fromTimeout = false) {
   APP_STATE.showBootScreen = false;
 
   APP_STATE.saveToFile();
+  // Last row while the card is still mounted: startDeepSleep() unmounts it, and
+  // RAM is about to be lost. Marks the start of a sleep gap in the log.
+  BatteryLog::flushNow("SLEEP");
 
   // Commit to sleeping before goToSleep() runs the outgoing activity's onExit():
   // a WiFi activity would otherwise silentRestart() here and reboot instead.
@@ -792,6 +813,8 @@ void setup() {
     activityManager.requestUpdateAndWait();
   }
 
+  BatteryLog::begin();
+
   allowSleepAt = millis() + 2000;
 }
 
@@ -917,6 +940,309 @@ void dumpPowerTelemetry() {
       logSerial.printf("PWR_HIZ:%d\n", (reg00 & 0x80) ? 1 : 0);
     }
   }
+  logSerial.flush();
+}
+
+// Profile where the current actually goes, one load at a time.
+//
+// Order matters and it is the opposite of intuition: measure the BIG loads
+// first. The frontlight and the GT911 are tens of mA and single-digit mA, both
+// far above the gauge's noise floor, so Current() reads them directly in
+// seconds. Only the CPU's own idle draw is small enough to need the slow
+// coulomb-counting method -- so it is measured last, against a floor that is
+// by then already known. Optimising the CPU before knowing what the peripherals
+// cost would be optimising the wrong thing.
+//
+// Ends in a restart: holding the GT911 in reset is easy, but bringing it back
+// needs the SDK's private beginGt911() and its address-selection timing. A
+// reboot restores it deterministically, and the results are in RTC memory.
+void setChargerHiz(bool enable);  // defined below; the profiles run entirely on battery
+
+// Sweep the frontlight and measure each step, because its cost is NOT linear in
+// the percentage the user sets. FrontlightManager maps percent -> duty through a
+// gamma 1.6554 table, and the PT4103 boost adds a fixed per-PWM-cycle overhead
+// that does not shrink with duty. The honest model is affine in DUTY,
+// I = a*duty + b, which needs at least two points -- one of them at low duty or
+// `b` is ill-conditioned.
+//
+// Sweeping beats inferring here: at 2% the draw is ~2 mA, sitting on a +-1 mA
+// noise floor, so the dim end is the part least worth trusting to a single
+// measurement. Measure the bright steps accurately and let the dim end be
+// predicted by the fit rather than measured badly.
+void runFrontlightSweep() {
+  const auto& g = BoardConfig::ACTIVE.batteryGauge;
+  constexpr uint8_t BQ27220_CURRENT = 0x0C;
+  if (g.gaugeAddr == 0 || !Frontlight.present()) {
+    logSerial.printf("FLSWEEP_ERR:no_gauge_or_frontlight\n");
+    return;
+  }
+
+  const bool wasOn = Frontlight.isOn();
+  const uint8_t wasBrightness = Frontlight.brightness();
+
+  setChargerHiz(true);
+  Frontlight.setOn(false);
+  delay(3000);
+  long dark = 0;
+  for (int i = 0; i < 4; ++i) {
+    uint16_t raw = 0;
+    debugReadReg16(g.gaugeAddr, BQ27220_CURRENT, raw);
+    dark += static_cast<int16_t>(raw);
+    delay(1000);
+  }
+  dark /= 4;
+  logSerial.printf("FLSWEEP:off ma=%ld\n", dark);
+
+  static const uint8_t STEPS[] = {1, 5, 10, 25, 50, 75, 100};
+  Frontlight.setOn(true);
+  for (uint8_t pct : STEPS) {
+    Frontlight.setBrightness(pct);
+    delay(3000);
+    long sum = 0;
+    for (int i = 0; i < 4; ++i) {
+      uint16_t raw = 0;
+      debugReadReg16(g.gaugeAddr, BQ27220_CURRENT, raw);
+      sum += static_cast<int16_t>(raw);
+      delay(1000);
+    }
+    const long mean = sum / 4;
+    // Report the delta against the dark floor: that is the frontlight's own
+    // cost, with the rest of the board subtracted out.
+    logSerial.printf("FLSWEEP:pct=%u ma=%ld light_ma=%ld\n", pct, mean, dark - mean);
+    logSerial.flush();
+  }
+
+  Frontlight.setBrightness(wasBrightness);
+  Frontlight.setOn(wasOn);
+  setChargerHiz(false);
+  logSerial.printf("FLSWEEP_DONE:restored on=%d pct=%u\n", wasOn, wasBrightness);
+  logSerial.flush();
+}
+
+void runPowerProfile() {
+  const auto& g = BoardConfig::ACTIVE.batteryGauge;
+  constexpr uint8_t BQ27220_CURRENT = 0x0C;
+  if (g.gaugeAddr == 0 || g.chargerAddr == 0) {
+    logSerial.printf("PROF_ERR:no_gauge_or_charger\n");
+    return;
+  }
+
+  // Averaged because Current() is a ~1 Hz conversion and jitters by a mA or two;
+  // min/max come out too so a noisy step is visible rather than hidden.
+  auto sample = [&](const char* label) {
+    delay(4000);  // let the gauge's averaging window clear the change
+    long sum = 0;
+    int lo = 32767, hi = -32768;
+    for (int i = 0; i < 5; ++i) {
+      uint16_t raw = 0;
+      debugReadReg16(g.gaugeAddr, BQ27220_CURRENT, raw);
+      const int ma = static_cast<int16_t>(raw);
+      sum += ma;
+      if (ma < lo) lo = ma;
+      if (ma > hi) hi = ma;
+      delay(1000);
+    }
+    const long mean = sum / 5;
+    logSerial.printf("PROF:%s mean_ma=%ld min=%d max=%d\n", label, mean, lo, hi);
+    logSerial.flush();
+    return mean;
+  };
+
+  // Everything below is measured on battery: with VBUS feeding SYS the gauge
+  // would report charge current instead of load. Set here rather than left to
+  // the caller so a forgotten CMD:HIZ:1 cannot silently invalidate a run.
+  setChargerHiz(true);
+
+  const bool frontlightWasOn = Frontlight.isOn();
+  const uint8_t frontlightBrightness = Frontlight.brightness();
+  logSerial.printf("PROF_START:frontlight_on=%d brightness=%u\n", frontlightWasOn, frontlightBrightness);
+
+  if (!frontlightWasOn) {
+    Frontlight.setOn(true);
+    Frontlight.setBrightness(frontlightBrightness);
+  }
+  const long withLight = sample("frontlight_on");
+
+  Frontlight.setOn(false);
+  const long noLight = sample("frontlight_off");
+
+  // Park the digitizer the way the deep-sleep path does (TouchConfig::
+  // holdResetInSleep): nothing gates its power on this board, so reset is the
+  // only off switch it has.
+  const auto& t = BoardConfig::ACTIVE.touch;
+  if (t.reset >= 0) {
+    gpio_hold_dis(static_cast<gpio_num_t>(t.reset));
+    pinMode(t.reset, OUTPUT);
+    digitalWrite(t.reset, LOW);
+  }
+  const long noTouch = sample("touch_off");
+
+  setChargerHiz(false);
+
+  logSerial.printf("PROF_SUMMARY:frontlight_ma=%ld gt911_ma=%ld floor_ma=%ld\n", withLight - noLight, noLight - noTouch,
+                   noTouch);
+  logSerial.printf("PROF_NOTE:restarting to restore the digitizer\n");
+  logSerial.flush();
+  delay(500);
+  esp_restart();
+}
+
+// Spend `seconds` in light sleep and report what it cost, so the saving can be
+// measured before deciding whether to build it into the main loop.
+//
+// Measuring this needs care. The gauge cannot be read while the CPU is halted,
+// and Current() at a few mA sits near the BQ27220's noise floor anyway, so the
+// real number comes from the coulomb counter: RemainingCapacity before and
+// after, over a window long enough to move a whole mAh (at ~2 mA that is about
+// 30 minutes). Current() is still sampled immediately on wake as a rough
+// cross-check -- its conversion window will have been mostly asleep.
+//
+// Run it with CMD:HIZ:1 or the numbers describe the charger, not the board.
+void runLightSleepProbe(uint32_t seconds, bool useLightSleep) {  // NOLINT(readability-function-size)
+  const auto& g = BoardConfig::ACTIVE.batteryGauge;
+  constexpr uint8_t BQ27220_REMAINING_CAPACITY = 0x10;
+  constexpr uint8_t BQ27220_CURRENT = 0x0C;
+  if (g.gaugeAddr == 0 || seconds == 0) {
+    logSerial.printf("LSLEEP_ERR:no_gauge_or_zero\n");
+    return;
+  }
+  if (WiFi.getMode() != WIFI_MODE_NULL) {
+    logSerial.printf("LSLEEP_ERR:wifi_active\n");
+    return;
+  }
+
+  uint16_t remCapStart = 0;
+  debugReadReg16(g.gaugeAddr, BQ27220_REMAINING_CAPACITY, remCapStart);
+  // The frontlight is the largest single load on this board -- tens of mA, far
+  // more than anything the CPU does at idle. Leaving it on would swamp the very
+  // difference being measured, so park it and restore it afterwards.
+  // Own the battery-isolation switch rather than trusting the caller to have set
+  // it: this probe deliberately kills the USB console partway through, so a
+  // forgotten CMD:HIZ:0 afterwards would leave the board running off its battery
+  // with no way to notice. The loop is known to return (verified: finished=1),
+  // so clearing it at the end is reliable.
+  setChargerHiz(true);
+
+  const bool frontlightWasOn = Frontlight.isOn();
+  if (frontlightWasOn) Frontlight.setOn(false);
+
+  logSerial.printf("LSLEEP_START:secs=%lu mode=%s remcap=%u frontlight_was=%d\n", static_cast<unsigned long>(seconds),
+                   useLightSleep ? "lightsleep" : "baseline", remCapStart, frontlightWasOn);
+  // Stamp the slot BEFORE sleeping and clear reachedEnd: if the loop never
+  // returns, the next boot sees a valid magic with reachedEnd == 0, which
+  // distinguishes 'light sleep killed it' from 'probe never ran'.
+  lsleepMagic = LSLEEP_RESULT_MAGIC;
+  lsleepReachedEnd = 0;
+  lsleepIterations = seconds;
+  lsleepRemCapStart = remCapStart;
+  lsleepRemCapEnd = 0;
+  lsleepElapsedMs = 0;
+  lsleepTimerWakes = 0;
+  lsleepGpioWakes = 0;
+  lsleepCurrentMa = 0;
+
+  logSerial.flush();
+  delay(50);  // let the console drain before the peripheral loses its clock
+
+  // The framebuffer and the page cache live in PSRAM; its rail must stay up or
+  // the screen comes back as noise.
+  esp_sleep_pd_config(ESP_PD_DOMAIN_VDDSDIO, ESP_PD_OPTION_ON);
+
+  // Wake on the page-turn button as well as the timer, so the probe stays
+  // interruptible and the GPIO path gets exercised at the same time.
+  gpio_wakeup_enable(static_cast<gpio_num_t>(T5S3_BOOT_BTN), GPIO_INTR_LOW_LEVEL);
+  esp_sleep_enable_gpio_wakeup();
+
+  // Bound the loop by ITERATION COUNT, not by a millis() deadline. Whether
+  // millis() advances across light sleep is exactly the thing under test, and
+  // when it does not, a `while (millis() - start < target)` loop never
+  // terminates -- it needs that many milliseconds of AWAKE time, which at one
+  // second of sleep per iteration is hours. That hung the first version.
+  const unsigned long startMs = millis();
+  uint32_t timerWakes = 0, gpioWakes = 0, otherWakes = 0;
+  for (uint32_t i = 0; i < seconds; ++i) {
+    if (!useLightSleep) {
+      // Baseline: reproduce what the idle main loop does today -- reduced clock,
+      // 50 ms delays -- for the same wall time, measured the same way. Without
+      // an A/B measured through one instrument, the light-sleep number has
+      // nothing trustworthy to be compared against.
+      powerManager.setPowerSaving(true);
+      for (int j = 0; j < 20; ++j) delay(50);
+      ++timerWakes;
+      if ((i % 10) == 9) {
+        logSerial.printf("LSLEEP_TICK:%lu/%lu ms=%lu\n", static_cast<unsigned long>(i + 1),
+                         static_cast<unsigned long>(seconds), millis());
+        logSerial.flush();
+      }
+      continue;
+    }
+    esp_sleep_enable_timer_wakeup(1000000ULL);  // 1 s chunks, so the probe stays interruptible
+    esp_light_sleep_start();
+    switch (esp_sleep_get_wakeup_cause()) {
+      case ESP_SLEEP_WAKEUP_TIMER:
+        ++timerWakes;
+        break;
+      case ESP_SLEEP_WAKEUP_GPIO:
+        ++gpioWakes;
+        break;
+      default:
+        ++otherWakes;
+        break;
+    }
+    // Heartbeat, so a run that loses the console still proves it was cycling.
+    if ((i % 10) == 9) {
+      logSerial.printf("LSLEEP_TICK:%lu/%lu ms=%lu\n", static_cast<unsigned long>(i + 1),
+                       static_cast<unsigned long>(seconds), millis());
+      logSerial.flush();
+    }
+  }
+  // Reported, not trusted: comparing this against `seconds` is how we learn
+  // whether the system clock is corrected for time spent asleep.
+  const unsigned long elapsedMs = millis() - startMs;
+
+  // Read Current() first: its averaging window is the one that just ended.
+  uint16_t curRaw = 0, remCapEnd = 0;
+  debugReadReg16(g.gaugeAddr, BQ27220_CURRENT, curRaw);
+  debugReadReg16(g.gaugeAddr, BQ27220_REMAINING_CAPACITY, remCapEnd);
+
+  gpio_wakeup_disable(static_cast<gpio_num_t>(T5S3_BOOT_BTN));
+  if (frontlightWasOn) Frontlight.setOn(true);
+  setChargerHiz(false);
+
+  lsleepElapsedMs = elapsedMs;
+  lsleepRemCapEnd = remCapEnd;
+  lsleepTimerWakes = timerWakes;
+  lsleepGpioWakes = gpioWakes;
+  lsleepCurrentMa = static_cast<int16_t>(curRaw);
+  lsleepReachedEnd = 1;
+
+  const int deltaMah = static_cast<int>(remCapStart) - static_cast<int>(remCapEnd);
+  // mAh over hours = mA. Integer maths, so scale before dividing.
+  const long avgMa = elapsedMs > 0 ? (deltaMah * 3600000L) / static_cast<long>(elapsedMs) : 0;
+  logSerial.printf("LSLEEP_DONE:elapsed_ms=%lu remcap=%u->%u delta_mah=%d avg_ma=%ld current_ma=%d\n", elapsedMs,
+                   remCapStart, remCapEnd, deltaMah, avgMa, static_cast<int16_t>(curRaw));
+  logSerial.printf("LSLEEP_WAKES:timer=%lu gpio=%lu other=%lu\n", static_cast<unsigned long>(timerWakes),
+                   static_cast<unsigned long>(gpioWakes), static_cast<unsigned long>(otherWakes));
+  logSerial.flush();
+}
+
+// Print whatever the last probe stored. Safe to call at any time, including
+// from a fresh boot after the console came back.
+void dumpLightSleepResult() {
+  if (lsleepMagic != LSLEEP_RESULT_MAGIC) {
+    logSerial.printf("LSLEEP_RESULT:none\n");
+    return;
+  }
+  const int deltaMah = static_cast<int>(lsleepRemCapStart) - static_cast<int>(lsleepRemCapEnd);
+  const long avgMa =
+      lsleepElapsedMs > 0 ? (static_cast<long>(deltaMah) * 3600000L) / static_cast<long>(lsleepElapsedMs) : 0;
+  logSerial.printf("LSLEEP_RESULT:finished=%lu iters=%lu elapsed_ms=%lu remcap=%lu->%lu delta_mah=%d avg_ma=%ld\n",
+                   static_cast<unsigned long>(lsleepReachedEnd), static_cast<unsigned long>(lsleepIterations),
+                   static_cast<unsigned long>(lsleepElapsedMs), static_cast<unsigned long>(lsleepRemCapStart),
+                   static_cast<unsigned long>(lsleepRemCapEnd), deltaMah, avgMa);
+  logSerial.printf("LSLEEP_RESULT_WAKES:timer=%lu gpio=%lu current_ma=%ld\n",
+                   static_cast<unsigned long>(lsleepTimerWakes), static_cast<unsigned long>(lsleepGpioWakes),
+                   static_cast<long>(lsleepCurrentMa));
   logSerial.flush();
 }
 
@@ -1057,6 +1383,120 @@ bool checkLowBattery() {
   }
   return false;
 }
+}  // namespace
+
+// --- Idle light sleep ---------------------------------------------------------
+// Between page turns the reader used to spin: delay(50) at a reduced clock,
+// burning 40 mA to display a page that is already on the panel and needs no
+// power to stay there. Measured, light sleep takes that to 8 mA -- and since the
+// e-paper holds its image and the user reads for a minute at a time, almost all
+// of a reading session is spent in exactly this state.
+//
+// Deep sleep cannot be used here: waking from it is a cold boot, one to two
+// seconds, which is unacceptable for a button press. Light sleep resumes in
+// about a millisecond.
+namespace {
+
+// How long the device must be idle before it is worth sleeping. Short enough
+// that a page being read is nearly all sleep, long enough that flicking through
+// several pages in a row never pays sleep/wake overhead.
+constexpr unsigned long LIGHT_SLEEP_IDLE_MS = 3000;
+
+// Backstop wake. The page-forward button is the expander key, which can only be
+// read over I2C -- so unlike BOOT and the touch IRQ it cannot be sampled by a
+// sleeping CPU at all, only woken from by the PCA9535 INT line on GPIO38. That
+// pin sits outside the RTC bank, and while light-sleep GPIO wakeup goes through
+// the always-powered digital GPIO peripheral and should work, "should" is not
+// good enough for the button the user presses most. A short timer means the
+// worst case is a polled button, not a dead one.
+constexpr uint64_t LIGHT_SLEEP_TIMER_US = 150000;  // 150 ms
+
+bool lightSleepArmed = false;
+
+#ifdef ENABLE_SERIAL_LOG
+// CMD:LSFORCE:1 overrides the "not while on the cable" guard below. Without it
+// the feature is untestable: it only ever engages unplugged, which is exactly
+// when there is no console to observe it from.
+bool lightSleepForced = false;
+#endif
+
+// Level-triggered LOW, because all three lines are active-low with pull-ups.
+void armLightSleepWakeSources() {
+  if (lightSleepArmed) return;
+  lightSleepArmed = true;
+
+  // Framebuffer and page cache live in octal PSRAM; its rail must stay up or the
+  // screen comes back as noise.
+  esp_sleep_pd_config(ESP_PD_DOMAIN_VDDSDIO, ESP_PD_OPTION_ON);
+
+  const auto arm = [](int pin) {
+    if (pin < 0) return;
+    const auto gpio = static_cast<gpio_num_t>(pin);
+    // Keep the awake pin configuration through sleep. The S3 otherwise applies a
+    // SEPARATE sleep-time configuration on sleep entry, which drops the pull-up
+    // and leaves these active-low lines floating -- the same documented gotcha
+    // the SDK calls out for the frontlight's LEDC pads. On the GT911 INT line
+    // that shows up as a sensitivity fault rather than an obvious failure: a
+    // brief, weak pulse from a fingertip no longer pulls a floating line low
+    // cleanly, so only broad firm contact registers.
+    gpio_sleep_sel_dis(gpio);
+    gpio_pullup_en(gpio);
+    gpio_wakeup_enable(gpio, GPIO_INTR_LOW_LEVEL);
+  };
+#if FREEINK_DEVICE_LILYGO
+  arm(T5S3_BOOT_BTN);     // page back / power
+  arm(T5S3_PCA9535_INT);  // page forward, behind the expander
+#endif
+  arm(BoardConfig::ACTIVE.touch.irq);  // touch and the capacitive home key
+  esp_sleep_enable_gpio_wakeup();
+}
+
+// True when the frame was spent asleep and the caller should skip its own delay.
+bool tryIdleLightSleep(unsigned long idleForMs) {
+  if (!SETTINGS.lightSleepIdle) return false;
+  if (idleForMs < LIGHT_SLEEP_IDLE_MS) return false;
+
+  // Between page turns and nowhere else. A page held on screen mid-book is the
+  // only state that is genuinely idle for minutes at a time; the home screen,
+  // the reader menu and every settings page expect input to be acted on
+  // promptly, and the saving there would be worth far less than the risk.
+  if (!activityManager.isReaderOnTop()) return false;
+
+  // Anything with work in flight must keep its clocks: light sleep halts BOTH
+  // cores, not just this task.
+  if (activityManager.skipLoopDelay()) return false;   // webserver / OTA
+  if (WiFi.getMode() != WIFI_MODE_NULL) return false;  // radio needs its clocks
+  if (deepSleepInProgress) return false;
+  if (activityManager.isRenderBusy()) return false;  // would freeze it mid-draw
+
+  // A held button would re-trigger a level wake instantly, spinning instead of
+  // sleeping -- and both hold actions (power off, touch toggle) time their hold
+  // in the main loop, so the loop has to keep running while a key is down.
+  if (gpio.isPressed(HalGPIO::BTN_POWER) || gpio.rawIsPressed(HalGPIO::BTN_DOWN)) return false;
+
+#ifdef ENABLE_SERIAL_LOG
+  // Light sleep kills the USB-Serial/JTAG console for good (verified: the device
+  // keeps running, the console does not come back until the cable is replugged).
+  // On the cable there is nothing to save anyway, so keep the console usable.
+  if (!lightSleepForced && gpio.isCharging()) return false;
+#endif
+
+  // Last, because it can block: a deferred panel refresh may still be running
+  // after the render task has let go of its lock, and the panel must be idle
+  // before both cores stop. No-op when nothing is pending. Placed after every
+  // cheap guard so a frame that will not sleep never waits here.
+  display.waitRefreshComplete();
+
+  armLightSleepWakeSources();
+  esp_sleep_enable_timer_wakeup(LIGHT_SLEEP_TIMER_US);
+
+  // Rejection is normal and frequent -- a pending interrupt, or a peripheral
+  // holding a sleep lock. Measured at roughly one call in three during the
+  // bench probe. Report it so the caller falls back to its ordinary delay
+  // rather than busy-looping through a sleep that never happens.
+  return esp_light_sleep_start() == ESP_OK;
+}
+
 }  // namespace
 
 void loop() {
@@ -1212,6 +1652,62 @@ void loop() {
         // Power-draw snapshot. Pair with CMD:HIZ:1 or the current reading is
         // the charge current, not the system load.
         dumpPowerTelemetry();
+      } else if (cmd == "FLSWEEP") {
+        runFrontlightSweep();
+      } else if (cmd == "BATTLOG") {
+        // Dump the battery CSV over the wire, so reading a couple of days of
+        // telemetry does not mean pulling the SD card out of the device.
+        // Paced like the SCREENSHOT dump: HWCDC silently drops the tail of a
+        // large write once its 256-byte TX ring overruns.
+        HalFile logFile = Storage.open("/.crosspoint/battery.csv", O_RDONLY);
+        if (!logFile) {
+          logSerial.printf("BATTLOG_ERR:not_found\n");
+        } else {
+          const size_t total = logFile.fileSize();
+          logSerial.printf("BATTLOG_START:%u\n", static_cast<unsigned>(total));
+          uint8_t chunk[192];
+          uint32_t stalls = 0;
+          for (;;) {
+            const int got = logFile.read(chunk, sizeof(chunk));
+            if (got <= 0) break;
+            // Retry the chunk in place rather than re-reading it: seeking back
+            // on every stall is one more thing to get subtly wrong.
+            int sent = 0;
+            while (sent < got && stalls < 400) {
+              const size_t w = logSerial.write(chunk + sent, got - sent);
+              if (w == 0) {
+                ++stalls;
+                delay(5);
+              } else {
+                stalls = 0;
+                sent += static_cast<int>(w);
+                logSerial.flush();
+              }
+            }
+            // Breathe between chunks. HWCDC can drop a chunk silently once the
+            // host falls behind -- a first dump came back 874 of 1001 bytes with
+            // no error anywhere, and a re-dump was complete.
+            delay(2);
+            if (stalls >= 400) break;  // host stopped draining entirely
+          }
+          logFile.close();
+          logSerial.printf("\nBATTLOG_END\n");
+        }
+        logSerial.flush();
+      } else if (cmd == "PWRPROF") {
+        runPowerProfile();
+      } else if (cmd == "LSLEEPRESULT") {
+        dumpLightSleepResult();
+      } else if (cmd.startsWith("LSLEEP:")) {
+        runLightSleepProbe(static_cast<uint32_t>(cmd.substring(7).toInt()), true);
+      } else if (cmd.startsWith("BASE:")) {
+        runLightSleepProbe(static_cast<uint32_t>(cmd.substring(5).toInt()), false);
+      } else if (cmd.startsWith("LSFORCE:")) {
+#ifdef ENABLE_SERIAL_LOG
+        lightSleepForced = cmd.substring(8).toInt() != 0;
+        logSerial.printf("LSFORCE_OK:%d\n", lightSleepForced ? 1 : 0);
+        logSerial.flush();
+#endif
       } else if (cmd.startsWith("BATTSIM:")) {
 #ifdef ENABLE_SERIAL_LOG
         // CMD:BATTSIM:<pct>[:<mv>] -- see simBatteryPct.
@@ -1372,6 +1868,8 @@ void loop() {
     activityManager.requestUpdate();
   }
 
+  BatteryLog::tick();
+
   const unsigned long activityStartTime = millis();
   activityManager.loop();
   const unsigned long activityDuration = millis() - activityStartTime;
@@ -1394,7 +1892,11 @@ void loop() {
     if (millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS) {
       // If we've been inactive for a while, increase the delay to save power
       powerManager.setPowerSaving(true);  // Lower CPU frequency after extended inactivity
-      delay(50);
+      // Sleeping already consumed the idle time; falling through to delay(50)
+      // as well would just add latency to the next button press.
+      if (!tryIdleLightSleep(millis() - lastActivityTime)) {
+        delay(50);
+      }
     } else {
       // Short delay to prevent tight loop while still being responsive
       delay(10);

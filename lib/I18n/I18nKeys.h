@@ -611,6 +611,7 @@ enum class StrId : uint16_t {
   STR_BATTERY_LOW,
   STR_BATTERY_CRITICAL,
   STR_BATTERY_SHUTDOWN,
+  STR_LIGHT_SLEEP_IDLE,
   // Sentinel - must be last
   _COUNT
 };

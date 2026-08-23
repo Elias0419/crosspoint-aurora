@@ -311,6 +311,8 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
             "systemFont", StrId::STR_CAT_DISPLAY),
         SettingInfo::Toggle(StrId::STR_SUNLIGHT_FADING_FIX, &CrossPointSettings::fadingFix, "fadingFix",
                             StrId::STR_CAT_DISPLAY),
+        SettingInfo::Toggle(StrId::STR_LIGHT_SLEEP_IDLE, &CrossPointSettings::lightSleepIdle, "lightSleepIdle",
+                            StrId::STR_CAT_SYSTEM),
 #if FREEINK_CAP_FRONTLIGHT
         SettingInfo::Toggle(StrId::STR_RESTORE_LIGHT_ON_WAKE, &CrossPointSettings::frontlightRestoreOnWake,
                             "frontlightRestoreOnWake", StrId::STR_CAT_DISPLAY),
@@ -364,8 +366,8 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                             StrId::STR_CAT_READER)
             .withTextSettings(),
         SettingInfo::Enum(StrId::STR_STROKE_WEIGHT, &CrossPointSettings::textStrokeWeight,
-                          {StrId::STR_WEIGHT_THINNEST, StrId::STR_WEIGHT_THIN, StrId::STR_WEIGHT_NORMAL, StrId::STR_WEIGHT_THICK,
-                           StrId::STR_WEIGHT_THICKEST},
+                          {StrId::STR_WEIGHT_THINNEST, StrId::STR_WEIGHT_THIN, StrId::STR_WEIGHT_NORMAL,
+                           StrId::STR_WEIGHT_THICK, StrId::STR_WEIGHT_THICKEST},
                           "textStrokeWeight", StrId::STR_CAT_READER)
             .withTextSettings(),
         SettingInfo::Enum(StrId::STR_IMAGES, &CrossPointSettings::imageRendering,

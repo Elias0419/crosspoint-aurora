@@ -38,6 +38,13 @@ class HalDisplay {
   void drawImageTransparent(const uint8_t* imageData, uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                             bool fromProgmem = false) const;
 
+  // Called once per panel refresh, for consumers that need to count them (the
+  // battery log: a refresh is a current spike from the panel PMIC, so it is
+  // modelled as energy-per-event, not milliamps-times-seconds). A hook rather
+  // than a direct call because the HAL must not depend on application code.
+  using RefreshObserver = void (*)();
+  void setRefreshObserver(RefreshObserver observer) { refreshObserver = observer; }
+
   void displayBuffer(RefreshMode mode = RefreshMode::FAST_REFRESH, bool turnOffScreen = false);
   // Non-blocking refresh (shadow-free): starts the panel waveform and returns
   // while the panel refreshes on its own. The framebuffer must stay untouched
@@ -116,6 +123,7 @@ class HalDisplay {
 
  private:
   EInkDisplay einkDisplay;
+  RefreshObserver refreshObserver = nullptr;
 };
 
 extern HalDisplay display;
