@@ -1,0 +1,108 @@
+name: Web flasher (GitHub Pages)
+
+# Builds the Aurora firmware for every web-flashable board and publishes the
+# ESP Web Tools page (web-flasher/ + the .bin parts + manifests) to GitHub
+# Pages. Runs on every release tag and on demand.
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - board: lilygo
+            pio_env: lilygo
+          - board: x4pro
+            pio_env: x4pro
+          - board: x4
+            pio_env: default
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+          enable-cache: false
+
+      - name: Install PlatformIO Core
+        run: |
+          uv pip install --system -U https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip
+          uv pip install --system -U "littlefs-python>=0.16.0" "fatfs-ng>=0.1.14" "pyyaml>=6.0.2" \
+            "rich-click>=1.8.6" "zopfli>=0.2.2" "intelhex>=2.3.0" "rich>=14.0.0" "urllib3<2" \
+            "cryptography>=45.0.3" "certifi>=2025.8.3" "ecdsa>=0.19.1" "bitstring>=4.3.1" \
+            "reedsolo>=1.5.3,<1.8" "esp-idf-size>=2.0.0" "esp-coredump>=1.14.0"
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Build
+        run: pio run -e ${{ matrix.pio_env }} -j1
+
+      - name: Collect image parts
+        run: |
+          mkdir -p parts/${{ matrix.pio_env }}
+          cp .pio/build/${{ matrix.pio_env }}/bootloader.bin \
+             .pio/build/${{ matrix.pio_env }}/partitions.bin \
+             .pio/build/${{ matrix.pio_env }}/firmware.bin parts/${{ matrix.pio_env }}/
+          cp "$(ls ~/.platformio/packages/framework-arduinoespressif32*/tools/partitions/boot_app0.bin | head -1)" \
+             parts/${{ matrix.pio_env }}/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parts-${{ matrix.pio_env }}
+          path: parts
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: parts-*
+          path: parts
+          merge-multiple: true
+
+      - name: Assemble site
+        run: |
+          mkdir -p .pio/build
+          cp -r parts/* .pio/build/
+          python scripts/build_flasher_site.py --out site
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

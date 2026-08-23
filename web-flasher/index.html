@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aurora Flasher</title>
+  <meta name="description" content="Flash the Aurora build of CrossPoint Reader from your browser.">
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    :root {
+      --bg: #f6f5f1; --fg: #111; --muted: #666; --card: #fff; --line: #d9d7d0; --accent: #111;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #111; --fg: #eee; --muted: #9a9a9a; --card: #1a1a1a; --line: #2e2e2e; --accent: #eee; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--fg);
+           font: 16px/1.5 -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif; }
+    main { max-width: 720px; margin: 0 auto; padding: 40px 20px 80px; }
+    h1 { font-size: 2rem; margin: 0 0 4px; letter-spacing: -0.02em; }
+    .sub { color: var(--muted); margin: 0 0 32px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+    .card h2 { font-size: 1.1rem; margin: 0 0 4px; }
+    .card p { margin: 0 0 14px; color: var(--muted); font-size: 0.95rem; }
+    .row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .ver { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.9rem; }
+    esp-web-install-button { --esp-tools-button-color: var(--accent);
+      --esp-tools-button-text-color: var(--bg); --esp-tools-button-border-radius: 10px; }
+    .warn { border-color: #c9a227; }
+    ol { padding-left: 20px; }
+    li { margin: 6px 0; }
+    code { background: var(--line); padding: 1px 6px; border-radius: 6px; font-size: 0.9em; }
+    footer { color: var(--muted); font-size: 0.85rem; margin-top: 40px; }
+    a { color: inherit; }
+    .unsupported { display: none; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Aurora</h1>
+  <p class="sub">CrossPoint Reader, the Aurora fork — flash it from the browser. <span id="version" class="ver"></span></p>
+
+  <div class="card warn unsupported" id="unsupported">
+    <h2>This browser can't talk to serial ports</h2>
+    <p>Web flashing needs Web Serial: use Chrome or Edge on a desktop (Windows, macOS, Linux, ChromeOS). Safari and Firefox don't support it.</p>
+  </div>
+
+  <div class="card">
+    <h2>LilyGo T5 S3 (4.7" touch)</h2>
+    <p>ESP32-S3. Plug in over USB-C, then click Install. If the port doesn't show up, hold <code>BOOT</code> while pressing <code>RST</code> and try again.</p>
+    <div class="row">
+      <esp-web-install-button manifest="manifest-lilygo.json"></esp-web-install-button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Xteink X4 Pro (touch)</h2>
+    <p>ESP32-S3 build with the touch controller and warm/cold frontlight.</p>
+    <div class="row">
+      <esp-web-install-button manifest="manifest-x4pro.json"></esp-web-install-button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Xteink X4 / X3</h2>
+    <p>ESP32-C3 build (buttons only).</p>
+    <div class="row">
+      <esp-web-install-button manifest="manifest-x4.json"></esp-web-install-button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Notes</h2>
+    <ol>
+      <li>Installing keeps your books and settings: only the bootloader, partition table and the app are written — the SD card is untouched.</li>
+      <li>Pick <em>Erase device</em> in the dialog only if you want a clean NVS (Wi-Fi credentials, saved state).</li>
+      <li>Later updates can be installed from the device itself: Settings → System → Update (the fork's releases).</li>
+    </ol>
+  </div>
+
+  <footer>
+    Built from <a href="https://github.com/jetaudio/crosspoint-aurora">jetaudio/crosspoint-aurora</a> ·
+    upstream <a href="https://github.com/crosspoint-reader/crosspoint-reader">crosspoint-reader</a> ·
+    flashing by <a href="https://esphome.github.io/esp-web-tools/">ESP Web Tools</a>.
+  </footer>
+</main>
+<script>
+  if (!("serial" in navigator)) document.getElementById("unsupported").style.display = "block";
+  fetch("manifest-lilygo.json").then(r => r.json()).then(m => {
+    document.getElementById("version").textContent = "v" + m.version;
+  }).catch(() => {});
+</script>
+</body>
+</html>
