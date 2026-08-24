@@ -415,9 +415,52 @@ void SettingsActivity::buildAuroraEntries() {
         auroraEntries.push_back(AuroraEntry{false, StrId::STR_NONE_OPT, s});
       }
     };
+    // Controls is by far the longest category -- touch behaviour, button
+    // layout and a dozen per-key action pickers in one undivided run. Split it
+    // the way the hardware does, and let anything unlisted fall through to a
+    // trailing group so a new setting still shows up without being placed here.
+    auto addGroupFrom = [&](const std::vector<SettingInfo>& vec, StrId header, std::initializer_list<StrId> ids,
+                            std::vector<StrId>& placed) {
+      bool headerAdded = false;
+      for (StrId id : ids) {
+        const auto it = std::find_if(vec.begin(), vec.end(), [id](const SettingInfo& s) { return s.nameId == id; });
+        if (it == vec.end() || isTopLevelSetting(it->nameId)) continue;
+        if (!headerAdded) {
+          auroraEntries.push_back(AuroraEntry{true, header, {}});
+          headerAdded = true;
+        }
+        auroraEntries.push_back(AuroraEntry{false, StrId::STR_NONE_OPT, *it});
+        placed.push_back(id);
+      }
+    };
+
     addRemaining(StrId::STR_SEC_READING, readerSettings);
     addRemaining(StrId::STR_CAT_DISPLAY, displaySettings);
-    addRemaining(StrId::STR_CAT_CONTROLS, controlsSettings);
+
+    std::vector<StrId> placedControls;
+    addGroupFrom(controlsSettings, StrId::STR_SEC_TOUCH,
+                 {StrId::STR_TOUCH_READER_CONTROLS, StrId::STR_TAP_FOR_READER_MENU, StrId::STR_TILT_PAGE_TURN},
+                 placedControls);
+    addGroupFrom(controlsSettings, StrId::STR_SEC_BUTTONS,
+                 {StrId::STR_SIDE_BTN_LAYOUT, StrId::STR_FRONT_BTN_FOLLOW_ORIENTATION, StrId::STR_SHOW_BUTTON_HINTS,
+                  StrId::STR_LONG_PRESS_BEHAVIOR, StrId::STR_LONG_PRESS_MENU, StrId::STR_BACK_SHORT_TO_FILE_BROWSER,
+                  StrId::STR_PWR_BTN_FOOTNOTE_BACK},
+                 placedControls);
+    addGroupFrom(controlsSettings, StrId::STR_SEC_KEY_ACTIONS,
+                 {StrId::STR_HOME_KEY_TAP, StrId::STR_HOME_KEY_HOLD, StrId::STR_USER_BTN_TAP, StrId::STR_USER_BTN_HOLD,
+                  StrId::STR_AUX10_ENABLE, StrId::STR_AUX10_TAP, StrId::STR_AUX10_HOLD, StrId::STR_SHORT_PWR_BTN,
+                  StrId::STR_PWR_BTN_HOLD},
+                 placedControls);
+    {
+      std::vector<SettingInfo> leftover;
+      for (const auto& s : controlsSettings) {
+        if (std::find(placedControls.begin(), placedControls.end(), s.nameId) == placedControls.end()) {
+          leftover.push_back(s);
+        }
+      }
+      addRemaining(StrId::STR_CAT_CONTROLS, leftover);
+    }
+
     addRemaining(StrId::STR_CAT_SYSTEM, systemSettings);
   }
 
