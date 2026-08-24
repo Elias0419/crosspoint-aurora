@@ -502,8 +502,21 @@ struct ConfigurableButton {
 
 static constexpr unsigned long BUTTON_LONG_PRESS_MS = 600;
 
+// Raised whenever a key this dispatcher owns is down or has just been let go,
+// whether or not its action consumed the frame. The inactivity timer reads it.
+// These keys are invisible to the ordinary activity check: GPIO10 is read
+// straight off the SoC, outside HalGPIO entirely. Reading a book with one of
+// them therefore looked exactly like reading nothing at all, and the device
+// deep-slept mid-page one full sleep-timeout after the last *touch* -- which is
+// the "it slept while I was reading" report, and the battery log agreed:
+// SLEEP:timeout-300s on a pass that had counted five page turns.
+// dispatchConfigurableButtons() runs later in the pass than the check, so this
+// is read one pass late; against a timer measured in minutes, that is nothing.
+static bool configurableKeyActivity = false;
+
 static bool serviceConfigurableButton(ConfigurableButton& state, const bool isDown, const bool releaseEdge,
                                       const uint8_t shortAction, const uint8_t longAction) {
+  if (isDown || releaseEdge) configurableKeyActivity = true;
   if (isDown && !state.down) {
     state.down = true;
     state.longFired = false;
@@ -574,21 +587,43 @@ static bool dispatchConfigurableButtons() {
     // which does this for them; a switch soldered to a bare pin does not, and a
     // cheap one chatters hard -- a bench trace of one press showed the line
     // crossing 60+ times in 14 s, every bounce a fresh tap for the dispatcher
-    // below. Only a level that has held steady for DEBOUNCE_MS is believed --
-    // 12 ms covers the observed chatter (bursts ~100 ms apart, individual
-    // bounces far shorter) without the press feeling laggy, which 30 ms did.
-    static constexpr unsigned long AUX10_DEBOUNCE_MS = 12;
+    // below.
+    //
+    // Fast attack, slow release. The old form waited for the level to hold
+    // steady across two *polls* before committing it, in either direction --
+    // and a poll is only as frequent as the loop runs. Mid-book the loop is in
+    // 150 ms light sleep, and GPIO10 was not a wake source, so a press was not
+    // even looked at until the timer woke the CPU: press seen at one wake,
+    // confirmed at the next, release seen at a third, confirmed at a fourth.
+    // That is the ~600 ms of holding a "tap" needed. The press edge now commits
+    // on sight (chatter is absorbed by a lockout after the previous commit),
+    // and only the release -- the edge that fires the tap action -- waits to be
+    // sure the line has settled. The pin is armed as a light-sleep wake source
+    // in armLightSleepWakeSources(), so the press itself now wakes the CPU.
+    static constexpr unsigned long AUX10_PRESS_LOCKOUT_MS = 40;
+    static constexpr unsigned long AUX10_RELEASE_SETTLE_MS = 25;
     static bool aux10Stable = false;  // debounced level, true = pressed
-    static bool aux10LastRaw = false;
-    static unsigned long aux10RawSince = 0;
-    const bool raw = digitalRead(T5S3_LORA_IRQ) == LOW;
+    static unsigned long aux10LastCommit = 0;
+    static unsigned long aux10HighSince = 0;
     const unsigned long nowMs = millis();
-    if (raw != aux10LastRaw) {
-      aux10LastRaw = raw;
-      aux10RawSince = nowMs;
-    } else if (raw != aux10Stable && nowMs - aux10RawSince >= AUX10_DEBOUNCE_MS) {
-      aux10Stable = raw;
-      LOG_DBG("AUX10", "level=%d", aux10Stable ? 0 : 1);  // 0 = pressed (pin low)
+    const bool raw = digitalRead(T5S3_LORA_IRQ) == LOW;
+
+    if (raw) {
+      aux10HighSince = 0;
+      if (!aux10Stable && nowMs - aux10LastCommit >= AUX10_PRESS_LOCKOUT_MS) {
+        aux10Stable = true;
+        aux10LastCommit = nowMs;
+        LOG_DBG("AUX10", "press");
+      }
+    } else if (aux10Stable) {
+      if (aux10HighSince == 0) {
+        aux10HighSince = nowMs;
+      } else if (nowMs - aux10HighSince >= AUX10_RELEASE_SETTLE_MS) {
+        aux10Stable = false;
+        aux10LastCommit = nowMs;
+        aux10HighSince = 0;
+        LOG_DBG("AUX10", "release");
+      }
     }
 
     static ConfigurableButton aux10Btn;
@@ -1538,6 +1573,9 @@ void armLightSleepWakeSources() {
 #if FREEINK_DEVICE_LILYGO
   arm(T5S3_BOOT_BTN);     // page back / power
   arm(T5S3_PCA9535_INT);  // page forward, behind the expander
+  // Only when the user has said a switch is wired there: an unwired input
+  // floats, and a floating wake source would wake the CPU at random.
+  if (SETTINGS.aux10Enabled) arm(T5S3_LORA_IRQ);
 #endif
   arm(BoardConfig::ACTIVE.touch.irq);  // touch and the capacitive home key
   esp_sleep_enable_gpio_wakeup();
@@ -1906,8 +1944,12 @@ void loop() {
 
   // Check for any user activity (button press or release) or active background work
   static unsigned long lastActivityTime = millis();
-  if (gpio.wasAnyPressed() || gpio.wasAnyReleased() || gpio.wasTouchActivity() || halTiltSensor.hadActivity() ||
-      activityManager.preventAutoSleep()) {
+  // Read and clear unconditionally: leaving it set behind a short-circuited ||
+  // would hand the next pass an activity it did not have.
+  const bool keyActivity = configurableKeyActivity;
+  configurableKeyActivity = false;
+  if (keyActivity || gpio.wasAnyPressed() || gpio.wasAnyReleased() || gpio.wasTouchActivity() ||
+      halTiltSensor.hadActivity() || activityManager.preventAutoSleep()) {
     lastActivityTime = millis();         // Reset inactivity timer
     powerManager.setPowerSaving(false);  // Restore normal CPU frequency on user activity
   }
