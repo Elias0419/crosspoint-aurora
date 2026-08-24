@@ -381,16 +381,24 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         // Reader category, since it does not affect the rest of the UI.
         SettingInfo::Toggle(StrId::STR_NIGHT_MODE, &CrossPointSettings::screenInverted, "screenInverted",
                             StrId::STR_CAT_READER),
-        // --- Controls ---
-        SettingInfo::Enum(StrId::STR_SIDE_BTN_LAYOUT, &CrossPointSettings::sideButtonLayout,
-                          {StrId::STR_PREV_NEXT, StrId::STR_NEXT_PREV, StrId::STR_DISABLED}, "sideButtonLayout",
-                          StrId::STR_CAT_CONTROLS),
+        // --- Controls. Three runs, in the order someone looks for them:
+        // what the glass does, what the buttons do, and which action each key
+        // is bound to. The category is the longest in Settings, and reading it
+        // as one undivided list was the complaint that prompted the split.
+
+        // Touch.
         SettingInfo::Enum(
             StrId::STR_TOUCH_READER_CONTROLS, &CrossPointSettings::touchReaderControls,
             {StrId::STR_STATE_OFF, StrId::STR_STATE_TAP, StrId::STR_STATE_SWIPE, StrId::STR_STATE_INVERTED_TAP},
             "touchReaderControls", StrId::STR_CAT_CONTROLS),
         SettingInfo::Toggle(StrId::STR_TAP_FOR_READER_MENU, &CrossPointSettings::tapForReaderMenu, "tapForReaderMenu",
                             StrId::STR_CAT_CONTROLS),
+        // (Tilt page turn is inserted here too, on the boards that have an IMU.)
+
+        // Buttons: what a press means, before which key does it.
+        SettingInfo::Enum(StrId::STR_SIDE_BTN_LAYOUT, &CrossPointSettings::sideButtonLayout,
+                          {StrId::STR_PREV_NEXT, StrId::STR_NEXT_PREV, StrId::STR_DISABLED}, "sideButtonLayout",
+                          StrId::STR_CAT_CONTROLS),
         SettingInfo::Toggle(StrId::STR_FRONT_BTN_FOLLOW_ORIENTATION, &CrossPointSettings::frontButtonFollowOrientation,
                             "frontButtonFollowOrientation", StrId::STR_CAT_CONTROLS),
         SettingInfo::Enum(
@@ -403,10 +411,14 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                           "longPressButtonBehavior", StrId::STR_CAT_CONTROLS),
         SettingInfo::Enum(StrId::STR_LONG_PRESS_MENU, &CrossPointSettings::longPressMenuFunction,
                           buildLongPressMenuValues(), "longPressMenuFunction", StrId::STR_CAT_CONTROLS),
-        // --- Configurable keys. Tap and hold are separate settings drawing on
-        // the shared BUTTON_ACTION list; the Home-key and user-button rows are
-        // filtered out below on boards that lack those keys. Order must match
-        // CrossPointSettings::BUTTON_ACTION.
+        SettingInfo::Toggle(StrId::STR_BACK_SHORT_TO_FILE_BROWSER, &CrossPointSettings::backShortToFileBrowser,
+                            "backShortToFileBrowser", StrId::STR_CAT_CONTROLS),
+        SettingInfo::Toggle(StrId::STR_PWR_BTN_FOOTNOTE_BACK, &CrossPointSettings::pwrBtnFootnoteBack,
+                            "pwrBtnFootnoteBack", StrId::STR_CAT_CONTROLS),
+
+        // Key actions: one tap row and one hold row per key, each drawing on
+        // the shared BUTTON_ACTION list (order must match that enum). Rows for
+        // keys a board does not have are filtered out below.
         SettingInfo::Enum(StrId::STR_HOME_KEY_TAP, &CrossPointSettings::homeKeyShortAction, buttonActionValues(),
                           "homeKeyShortAction", StrId::STR_CAT_CONTROLS),
         SettingInfo::Enum(StrId::STR_HOME_KEY_HOLD, &CrossPointSettings::homeKeyLongAction, buttonActionValues(),
@@ -415,6 +427,14 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                           "userBtnShortAction", StrId::STR_CAT_CONTROLS),
         SettingInfo::Enum(StrId::STR_USER_BTN_HOLD, &CrossPointSettings::userBtnLongAction, buttonActionValues(),
                           "userBtnLongAction", StrId::STR_CAT_CONTROLS),
+        // GPIO10 carries no key on a stock board, so the pin is only sampled
+        // once its own toggle is on -- see aux10Enabled.
+        SettingInfo::Toggle(StrId::STR_AUX10_ENABLE, &CrossPointSettings::aux10Enabled, "aux10Enabled",
+                            StrId::STR_CAT_CONTROLS),
+        SettingInfo::Enum(StrId::STR_AUX10_TAP, &CrossPointSettings::aux10ShortAction, buttonActionValues(),
+                          "aux10ShortAction", StrId::STR_CAT_CONTROLS),
+        SettingInfo::Enum(StrId::STR_AUX10_HOLD, &CrossPointSettings::aux10LongAction, buttonActionValues(),
+                          "aux10LongAction", StrId::STR_CAT_CONTROLS),
     // BOOT tap keeps its own option list: Confirm/Footnotes are power-button
     // specific, and the stored indices are load-bearing (SHORT_PWRBTN).
     // Tap sits before hold, matching the other key pairs above.
@@ -431,10 +451,6 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
 #endif
         SettingInfo::Enum(StrId::STR_PWR_BTN_HOLD, &CrossPointSettings::pwrBtnLongAction, buttonActionValues(),
                           "pwrBtnLongAction", StrId::STR_CAT_CONTROLS),
-        SettingInfo::Toggle(StrId::STR_PWR_BTN_FOOTNOTE_BACK, &CrossPointSettings::pwrBtnFootnoteBack,
-                            "pwrBtnFootnoteBack", StrId::STR_CAT_CONTROLS),
-        SettingInfo::Toggle(StrId::STR_BACK_SHORT_TO_FILE_BROWSER, &CrossPointSettings::backShortToFileBrowser,
-                            "backShortToFileBrowser", StrId::STR_CAT_CONTROLS),
 
         // --- System ---
         SettingInfo::Value(
@@ -563,9 +579,10 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
     };
     // Only show tilt page turn setting when the QMI8658 IMU is present (X3)
     if (halTiltSensor.isAvailable()) {
-      // Insert after the short power button setting (end of Controls section)
+      // With the touch/gesture rows at the head of Controls, not stranded
+      // after the power-button row at the end of the category.
       for (auto it = v.begin(); it != v.end(); ++it) {
-        if (it->nameId == StrId::STR_SHORT_PWR_BTN) {
+        if (it->nameId == StrId::STR_TAP_FOR_READER_MENU) {
           v.insert(it + 1, SettingInfo::Enum(StrId::STR_TILT_PAGE_TURN, &CrossPointSettings::tiltPageTurn,
                                              {StrId::STR_STATE_OFF, StrId::STR_NORMAL, StrId::STR_INVERTED},
                                              "tiltPageTurn", StrId::STR_CAT_CONTROLS));
@@ -598,7 +615,9 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
   // other supported board routes a key through that dispatcher.
   v.erase(std::remove_if(v.begin(), v.end(),
                          [](const SettingInfo& s) {
-                           return s.nameId == StrId::STR_USER_BTN_TAP || s.nameId == StrId::STR_USER_BTN_HOLD;
+                           return s.nameId == StrId::STR_USER_BTN_TAP || s.nameId == StrId::STR_USER_BTN_HOLD ||
+                                  s.nameId == StrId::STR_AUX10_ENABLE || s.nameId == StrId::STR_AUX10_TAP ||
+                                  s.nameId == StrId::STR_AUX10_HOLD;
                          }),
           v.end());
 #endif

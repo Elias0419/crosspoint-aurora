@@ -38,6 +38,7 @@
 #include "OpdsServerStore.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
+#include "SettingsList.h"
 #include "SystemFont.h"
 #include "activities/Activity.h"
 #include "activities/ActivityManager.h"
@@ -504,7 +505,15 @@ static bool serviceConfigurableButton(ConfigurableButton& state, const bool isDo
   }
   if (state.down && !state.longFired && isDown && millis() - state.pressedAt >= BUTTON_LONG_PRESS_MS) {
     state.longFired = true;
-    return runButtonAction(longAction) || true;  // the hold owns the frame either way
+    // Report only what the action itself consumed. Claiming the frame
+    // unconditionally (the old `|| true`) broke every request-based action on
+    // a hold: page turn / back / home / menu / control centre only raise a
+    // request for the activity to pick up later in this same pass, and
+    // returning true here makes loop() return before activityManager.loop()
+    // runs -- the next pass then clears the request unseen. Frontlight and the
+    // other act-now cases were unaffected, which is what made it look like a
+    // page-turn bug. The trailing release is already swallowed by longFired.
+    return runButtonAction(longAction);
   }
   if (releaseEdge || (state.down && !isDown)) {
     const bool wasLong = state.longFired;
@@ -542,6 +551,46 @@ static bool dispatchConfigurableButtons() {
       serviceConfigurableButton(userBtn, gpio.rawIsPressed(HalGPIO::BTN_DOWN), gpio.rawWasReleased(HalGPIO::BTN_DOWN),
                                 SETTINGS.userBtnShortAction, SETTINGS.userBtnLongAction) ||
       consumed;
+
+  // A switch soldered to GPIO10 (the parked LoRa IRQ), read straight off the
+  // SoC rather than through the expander: nothing else claims the pin once
+  // BoardT5S3::disableGpsLora() has left it an input. Pulled up here, so the
+  // switch shorts to GND and pressed reads LOW. Sampled only while the user
+  // has turned it on -- an unwired pin floats, and a floating input would
+  // fire actions on its own.
+  static bool aux10Configured = false;
+  if (SETTINGS.aux10Enabled) {
+    if (!aux10Configured) {
+      pinMode(T5S3_LORA_IRQ, INPUT_PULLUP);
+      aux10Configured = true;
+    }
+    // Debounce in software. The board's own keys arrive through InputManager,
+    // which does this for them; a switch soldered to a bare pin does not, and a
+    // cheap one chatters hard -- a bench trace of one press showed the line
+    // crossing 60+ times in 14 s, every bounce a fresh tap for the dispatcher
+    // below. Only a level that has held steady for DEBOUNCE_MS is believed.
+    static constexpr unsigned long AUX10_DEBOUNCE_MS = 30;
+    static bool aux10Stable = false;  // debounced level, true = pressed
+    static bool aux10LastRaw = false;
+    static unsigned long aux10RawSince = 0;
+    const bool raw = digitalRead(T5S3_LORA_IRQ) == LOW;
+    const unsigned long nowMs = millis();
+    if (raw != aux10LastRaw) {
+      aux10LastRaw = raw;
+      aux10RawSince = nowMs;
+    } else if (raw != aux10Stable && nowMs - aux10RawSince >= AUX10_DEBOUNCE_MS) {
+      aux10Stable = raw;
+      LOG_DBG("AUX10", "level=%d", aux10Stable ? 0 : 1);  // 0 = pressed (pin low)
+    }
+
+    static ConfigurableButton aux10Btn;
+    const bool down = aux10Stable;
+    consumed = serviceConfigurableButton(aux10Btn, down, false, SETTINGS.aux10ShortAction, SETTINGS.aux10LongAction) ||
+               consumed;
+  } else if (aux10Configured) {
+    pinMode(T5S3_LORA_IRQ, INPUT);  // back to how disableGpsLora() left it
+    aux10Configured = false;
+  }
 #endif
 
   return consumed;
@@ -1768,6 +1817,81 @@ void loop() {
         // CMD:HIZ:1 runs the board off its battery with USB still attached, so
         // the gauge measures real consumption; CMD:HIZ:0 restores charging.
         setChargerHiz(cmd.substring(4).toInt() != 0);
+      } else if (cmd.startsWith("SET:") || cmd.startsWith("GET:")) {
+        // CMD:SET:<jsonKey>:<value> / CMD:GET:<jsonKey> -- read or write any
+        // uint8 setting by the same key the JSON API uses, so bringing up a
+        // feature does not mean walking its screens by hand. Writes go through
+        // saveToFile() like the UI does.
+        const bool writing = cmd.startsWith("SET:");
+        String rest = cmd.substring(4);
+        int value = 0;
+        if (writing) {
+          const int colon = rest.lastIndexOf(':');
+          if (colon < 0) {
+            logSerial.printf("SET_ERR:need_key:value\n");
+            logSerial.flush();
+            return;
+          }
+          value = rest.substring(colon + 1).toInt();
+          rest = rest.substring(0, colon);
+        }
+        const SettingInfo* found = nullptr;
+        for (const auto& info : getSettingsList(&sdFontSystem.registry())) {
+          if (info.key != nullptr && rest == info.key) {
+            static SettingInfo copy;
+            copy = info;
+            found = &copy;
+            break;
+          }
+        }
+        if (found == nullptr || found->valuePtr == nullptr) {
+          logSerial.printf("%s_ERR:unknown_key:%s\n", writing ? "SET" : "GET", rest.c_str());
+        } else if (writing) {
+          SETTINGS.*(found->valuePtr) = static_cast<uint8_t>(value);
+          SETTINGS.saveToFile();
+          logSerial.printf("SET_OK:%s=%u\n", rest.c_str(), SETTINGS.*(found->valuePtr));
+        } else {
+          logSerial.printf("GET:%s=%u\n", rest.c_str(), SETTINGS.*(found->valuePtr));
+        }
+        logSerial.flush();
+      } else if (cmd.startsWith("GPIO:")) {
+        // CMD:GPIO:<pin>[:<watchMs>] -- read a pin from the console, for
+        // bringing up a wire before there is any firmware that uses it.
+        // Configured INPUT_PULLUP, so a switch to GND reads 1 idle / 0 pressed;
+        // with watchMs it polls and reports every change over that window.
+        String rest = cmd.substring(5);
+        unsigned long watchMs = 0;
+        const int colon = rest.indexOf(':');
+        if (colon >= 0) {
+          watchMs = static_cast<unsigned long>(rest.substring(colon + 1).toInt());
+          rest = rest.substring(0, colon);
+        }
+        const int pin = rest.toInt();
+        if (pin < 0 || pin > 48) {
+          logSerial.printf("GPIO_ERR:pin_out_of_range\n");
+        } else {
+          pinMode(pin, INPUT_PULLUP);
+          delayMicroseconds(50);  // let the pull settle before the first sample
+          int level = digitalRead(pin);
+          logSerial.printf("GPIO:%d=%d (pullup; a switch to GND reads 0 when pressed)\n", pin, level);
+          const unsigned long until = millis() + (watchMs > 30000 ? 30000 : watchMs);
+          unsigned long changes = 0;
+          while (millis() < until) {
+            const int now = digitalRead(pin);
+            if (now != level) {
+              level = now;
+              ++changes;
+              logSerial.printf("GPIO:%d=%d t=%lums\n", pin, level, millis());
+              logSerial.flush();
+            }
+            delay(5);
+          }
+          if (watchMs > 0) logSerial.printf("GPIO_DONE:%d changes=%lu\n", pin, changes);
+          // Back to a plain input: INPUT_PULLUP on a pin the board drives (the
+          // T5 S3's GPIO10 is the LoRa IRQ) is not a state to walk away from.
+          pinMode(pin, INPUT);
+        }
+        logSerial.flush();
       }
     }
   }
