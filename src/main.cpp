@@ -1838,7 +1838,12 @@ void loop() {
   }
 
   const unsigned long sleepTimeoutMs = SETTINGS.getSleepTimeoutMs();
-  if (sleepTimeoutMs > 0 && millis() - lastActivityTime >= sleepTimeoutMs) {
+  // Not while the cable is in. Deep sleep on USB is all cost and no saving:
+  // the charger is feeding SYS anyway, waking needs a button press, and the
+  // console (and any serial tooling on it) dies with the CPU. A power-button
+  // press still sleeps the device deliberately -- this only skips the
+  // inactivity timer.
+  if (sleepTimeoutMs > 0 && !gpio.isUsbConnected() && millis() - lastActivityTime >= sleepTimeoutMs) {
     LOG_DBG("SLP", "Auto-sleep triggered after %lu ms of inactivity", sleepTimeoutMs);
     enterDeepSleep(true);
     // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
