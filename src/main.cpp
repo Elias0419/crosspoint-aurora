@@ -1843,7 +1843,13 @@ void loop() {
   // console (and any serial tooling on it) dies with the CPU. A power-button
   // press still sleeps the device deliberately -- this only skips the
   // inactivity timer.
-  if (sleepTimeoutMs > 0 && !gpio.isUsbConnected() && millis() - lastActivityTime >= sleepTimeoutMs) {
+  //
+  // isCharging(), not isUsbConnected(): the latter reads a dedicated detect
+  // GPIO, which the T5 S3 does not have (usbDetect is PIN_UNASSIGNED there, so
+  // it answers false with the cable plugged in -- the device still slept).
+  // isCharging() falls back to the charger's PG_STAT, which stays set for as
+  // long as external power is present, including after the pack tops off.
+  if (sleepTimeoutMs > 0 && !gpio.isCharging() && millis() - lastActivityTime >= sleepTimeoutMs) {
     LOG_DBG("SLP", "Auto-sleep triggered after %lu ms of inactivity", sleepTimeoutMs);
     enterDeepSleep(true);
     // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
