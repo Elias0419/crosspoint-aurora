@@ -24,6 +24,14 @@ void UiListActivity::onEnter() {
   requestUpdate();
 }
 
+// "< Parent". One buffer: a frame draws one header, and drawChrome() copies it
+// into the panel before anything else can ask for another.
+const char* UiListActivity::backHeader(const StrId parent) {
+  static char buf[48];
+  snprintf(buf, sizeof(buf), "‹ %s", I18N.get(parent));
+  return buf;
+}
+
 void UiListActivity::screenTrampoline(UiScreen& screen, void* user) {
   static_cast<UiListActivity*>(user)->buildScreen(screen);
 }

@@ -35,7 +35,7 @@ void ControlCenterSettingsActivity::onEnter() {
   }
 }
 
-const char* ControlCenterSettingsActivity::headerTitle() const { return tr(STR_CUSTOMISE_CONTROL_CENTER); }
+const char* ControlCenterSettingsActivity::headerTitle() const { return backHeader(StrId::STR_CAT_DISPLAY); }
 
 void ControlCenterSettingsActivity::activateIndex(const int index) {
   if (index < 0 || index >= ITEM_COUNT) return;

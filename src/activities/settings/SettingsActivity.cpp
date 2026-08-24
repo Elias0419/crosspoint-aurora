@@ -17,6 +17,7 @@
 #include "DropCapFontSelectionActivity.h"
 #include "FontDownloadActivity.h"
 #include "KOReaderSettingsActivity.h"
+#include "KeyActionsSettingsActivity.h"
 #include "LanguageSelectActivity.h"
 #include "MappedInputManager.h"
 #include "OpdsServerListActivity.h"
@@ -76,11 +77,16 @@ void SettingsActivity::rebuildSettingsLists() {
           SETTINGS.shortPwrBtn != CrossPointSettings::SHORT_PWRBTN::FOOTNOTES) {
         continue;
       }
+      // The per-key tap/hold pickers live on their own screen; they stay in
+      // the shared list for the web API, and one Action row below opens them.
+      if (KeyActionsSettingsActivity::owns(setting.nameId)) continue;
       controlsSettings.push_back(setting);
     } else if (setting.category == StrId::STR_CAT_SYSTEM) {
       systemSettings.push_back(setting);
     }
   }
+
+  controlsSettings.push_back(SettingInfo::Action(StrId::STR_SEC_KEY_ACTIONS, SettingAction::KeyActions));
 
   // Append device-only ACTION items
   if (!BoardConfig::hasTouch()) {
@@ -187,8 +193,9 @@ static StrId settingSection(const SettingInfo& s) {
     case StrId::STR_PWR_BTN_FOOTNOTE_BACK:
       return StrId::STR_SEC_BUTTONS;
     default:
-      // The per-key tap/hold pickers, which is everything else in Controls.
-      return StrId::STR_SEC_KEY_ACTIONS;
+      // Whatever is left (including the entry that opens the key-actions
+      // screen) sits with the button rows.
+      return StrId::STR_SEC_BUTTONS;
   }
 }
 
@@ -713,6 +720,9 @@ void SettingsActivity::activateSetting(const SettingInfo& setting) {
         break;
       case SettingAction::CustomiseStatusBar:
         startActivityForResult(std::make_unique<StatusBarSettingsActivity>(renderer, mappedInput), resultHandler);
+        break;
+      case SettingAction::KeyActions:
+        startActivityForResult(std::make_unique<KeyActionsSettingsActivity>(renderer, mappedInput), resultHandler);
         break;
       case SettingAction::CustomiseControlCenter:
         startActivityForResult(std::make_unique<ControlCenterSettingsActivity>(renderer, mappedInput), resultHandler);

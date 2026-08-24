@@ -41,7 +41,7 @@ void LanguageSelectActivity::onEnter() {
   }
 }
 
-const char* LanguageSelectActivity::headerTitle() const { return tr(STR_LANGUAGE); }
+const char* LanguageSelectActivity::headerTitle() const { return backHeader(StrId::STR_CAT_SYSTEM); }
 
 void LanguageSelectActivity::activateIndex(const int index) {
   // The activated row leaves this screen; a lingering flash would gray an

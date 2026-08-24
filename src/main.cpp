@@ -327,7 +327,10 @@ static bool loadSleepFrameBuffer() {
 }
 
 // Enter deep sleep mode
-void enterDeepSleep(bool fromTimeout = false) {
+// `reason` is recorded in the battery log's SLEEP row. The console dies with
+// the CPU, so that row is the only evidence left of which path took the device
+// down -- the timeout, a key bound to Sleep, the low-battery guard or a tile.
+void enterDeepSleep(bool fromTimeout = false, const char* reason = "other") {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
   // Retire the render task first. Everything below runs on this task: the sleep
   // screen paints from SleepActivity::onEnter(), then the panel, the SD card and
@@ -350,7 +353,10 @@ void enterDeepSleep(bool fromTimeout = false) {
   APP_STATE.saveToFile();
   // Last row while the card is still mounted: startDeepSleep() unmounts it, and
   // RAM is about to be lost. Marks the start of a sleep gap in the log.
-  BatteryLog::flushNow("SLEEP");
+  char sleepEvent[24];
+  snprintf(sleepEvent, sizeof(sleepEvent), "SLEEP:%s", reason);
+  BatteryLog::flushNow(sleepEvent);
+  LOG_INF("SLP", "Deep sleep (%s)", reason);
 
   // Commit to sleeping before goToSleep() runs the outgoing activity's onExit():
   // a WiFi activity would otherwise silentRestart() here and reboot instead.
@@ -407,7 +413,7 @@ static void runDeferredPanelAction() {
     RenderLock lock;
     ScreenshotUtil::takeScreenshot(renderer);
   } else if (action == 2) {
-    enterDeepSleep();
+    enterDeepSleep(false, "panel-tile");
   }
 }
 
@@ -478,7 +484,7 @@ static bool runButtonAction(const uint8_t action) {
     }
     case CrossPointSettings::BTN_ACT_SLEEP:
       if (millis() < allowSleepAt) return true;
-      enterDeepSleep();
+      enterDeepSleep(false, "key-action");
       return true;
     default:
       return false;
@@ -568,8 +574,10 @@ static bool dispatchConfigurableButtons() {
     // which does this for them; a switch soldered to a bare pin does not, and a
     // cheap one chatters hard -- a bench trace of one press showed the line
     // crossing 60+ times in 14 s, every bounce a fresh tap for the dispatcher
-    // below. Only a level that has held steady for DEBOUNCE_MS is believed.
-    static constexpr unsigned long AUX10_DEBOUNCE_MS = 30;
+    // below. Only a level that has held steady for DEBOUNCE_MS is believed --
+    // 12 ms covers the observed chatter (bursts ~100 ms apart, individual
+    // bounces far shorter) without the press feeling laggy, which 30 ms did.
+    static constexpr unsigned long AUX10_DEBOUNCE_MS = 12;
     static bool aux10Stable = false;  // debounced level, true = pressed
     static bool aux10LastRaw = false;
     static unsigned long aux10RawSince = 0;
@@ -1436,7 +1444,7 @@ bool checkLowBattery() {
       GUI.drawPopup(renderer, tr(STR_BATTERY_SHUTDOWN));
     }
     delay(2000);  // long enough to read before the panel retains the sleep frame
-    enterDeepSleep();
+    enterDeepSleep(false, "low-battery");
     return true;
   }
 
@@ -1904,6 +1912,20 @@ void loop() {
     powerManager.setPowerSaving(false);  // Restore normal CPU frequency on user activity
   }
 
+  // Plugging or unplugging is someone handling the device, and it also changes
+  // which rules apply: the inactivity timer is suspended on the cable, so the
+  // idle clock can be minutes past the timeout by the time the cable comes out.
+  // Without this the device slept the instant it was unplugged mid-page.
+  {
+    static bool wasCharging = gpio.isCharging();
+    const bool charging = gpio.isCharging();
+    if (charging != wasCharging) {
+      wasCharging = charging;
+      lastActivityTime = millis();
+      LOG_DBG("SLP", "USB %s: idle timer restarted", charging ? "connected" : "disconnected");
+    }
+  }
+
   // Let wake continue as soon as its hold has been verified. The release can
   // arrive after setup, so consume that one input frame rather than making it
   // a page turn, refresh, or other short power-button action.
@@ -1981,8 +2003,10 @@ void loop() {
   // isCharging() falls back to the charger's PG_STAT, which stays set for as
   // long as external power is present, including after the pack tops off.
   if (sleepTimeoutMs > 0 && !gpio.isCharging() && millis() - lastActivityTime >= sleepTimeoutMs) {
-    LOG_DBG("SLP", "Auto-sleep triggered after %lu ms of inactivity", sleepTimeoutMs);
-    enterDeepSleep(true);
+    char why[24];
+    snprintf(why, sizeof(why), "timeout-%lus", (millis() - lastActivityTime) / 1000UL);
+    LOG_DBG("SLP", "Auto-sleep triggered after %lu ms of inactivity", millis() - lastActivityTime);
+    enterDeepSleep(true, why);
     // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
     return;
   }

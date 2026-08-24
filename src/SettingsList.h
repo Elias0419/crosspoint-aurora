@@ -17,6 +17,7 @@
 #include "ReaderFontSizes.h"
 #include "SystemFont.h"
 #include "activities/settings/SettingsActivity.h"
+#include "components/UITheme.h"
 #include "util/DictionaryRegistry.h"
 
 // Build the font family setting dynamically. When registry is non-null, SD card fonts
@@ -621,13 +622,28 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                          }),
           v.end());
 #endif
+  // Reader Menu Style picks between the list menu and the toolbar overlay --
+  // but a theme that owns the reader chrome (Aurora) always draws the toolbar,
+  // so on that theme the row is a switch with nothing behind it.
+  if (GUI.ownsReaderChrome()) {
+    v.erase(std::remove_if(v.begin(), v.end(),
+                           [](const SettingInfo& s) { return s.nameId == StrId::STR_READER_MENU_STYLE; }),
+            v.end());
+  }
   // Side-button layout swaps which of the two side keys pages forward. A board
   // with neither (the T5 S3 pages from the expander key and the glass, and that
   // key is masked out of the normal queries) has nothing for it to swap.
+  // "Long-press button behaviour" goes with it: it is what a held PAGE-TURN
+  // BUTTON does (skip ten pages, or rotate), and a board with no page-turn
+  // buttons has no press to hold. A held touch zone still reaches the same
+  // code, but that is not what the row says it configures, and it defaults off.
   if (BoardConfig::ACTIVE.input.up < 0 && BoardConfig::ACTIVE.input.down < 0) {
-    v.erase(
-        std::remove_if(v.begin(), v.end(), [](const SettingInfo& s) { return s.nameId == StrId::STR_SIDE_BTN_LAYOUT; }),
-        v.end());
+    v.erase(std::remove_if(v.begin(), v.end(),
+                           [](const SettingInfo& s) {
+                             return s.nameId == StrId::STR_SIDE_BTN_LAYOUT ||
+                                    s.nameId == StrId::STR_LONG_PRESS_BEHAVIOR;
+                           }),
+            v.end());
   }
   // "Long-press Menu" is the front Confirm button's hold action; the Home key's
   // hold has its own row. Boards with no Confirm button never show it.

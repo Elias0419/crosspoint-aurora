@@ -32,7 +32,7 @@ KOReaderSettingsActivity::KOReaderSettingsActivity(GfxRenderer& renderer, Mapped
 
 int KOReaderSettingsActivity::listCount() const { return MENU_ITEMS; }
 
-const char* KOReaderSettingsActivity::headerTitle() const { return tr(STR_KOREADER_SYNC); }
+const char* KOReaderSettingsActivity::headerTitle() const { return backHeader(StrId::STR_CAT_SYSTEM); }
 
 void KOReaderSettingsActivity::activateIndex(const int index) {
   // Activation opens a keyboard/sub-activity or repaints a new value; a

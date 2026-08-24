@@ -116,7 +116,7 @@ void OpdsServerListActivity::onBackButton() {
   }
 }
 
-const char* OpdsServerListActivity::headerTitle() const { return tr(STR_OPDS_SERVERS); }
+const char* OpdsServerListActivity::headerTitle() const { return backHeader(StrId::STR_CAT_SYSTEM); }
 
 void OpdsServerListActivity::activateIndex(const int index) {
   nav.selected = index;

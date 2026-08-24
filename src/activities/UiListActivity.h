@@ -1,5 +1,7 @@
 #pragma once
 
+#include <I18n.h>
+
 #include "activities/Activity.h"
 #include "components/UiAppHost.h"
 #include "util/ButtonNavigator.h"
@@ -60,6 +62,11 @@ class UiListActivity : public Activity, protected UiAppHost {
   virtual void onBackButton() { finish(); }
   // Header band, drawn before the app renders. Default paints GUI.drawHeader
   // with headerTitle(); override either for custom chrome.
+  // A sub-screen names the way BACK from it, not itself: the title band reads
+  // "< Parent". The screen you are on is the one you can see; what a reader
+  // needs from the header is where the back gesture lands. Returns a pointer
+  // into a shared buffer, consumed immediately by drawChrome().
+  static const char* backHeader(StrId parent);
   virtual const char* headerTitle() const { return nullptr; }
   virtual void drawChrome();
   // Button hints, drawn after the app renders. Default: Back/Select/Up/Down.
