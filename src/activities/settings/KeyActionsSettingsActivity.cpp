@@ -4,6 +4,7 @@
 
 #include <algorithm>
 
+#include "ConfigurableKeys.h"
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
 #include "SdCardFontSystem.h"
@@ -13,17 +14,28 @@
 namespace fui = freeink::ui;
 
 namespace {
-// Display order. Every entry is a tap/hold pair except the GPIO10 enable
-// toggle, which gates the pair below it.
-constexpr StrId kRows[] = {
-    StrId::STR_HOME_KEY_TAP,  StrId::STR_HOME_KEY_HOLD, StrId::STR_USER_BTN_TAP,
-    StrId::STR_USER_BTN_HOLD, StrId::STR_AUX10_ENABLE,  StrId::STR_AUX10_TAP,
-    StrId::STR_AUX10_HOLD,    StrId::STR_SHORT_PWR_BTN, StrId::STR_PWR_BTN_HOLD,
-};
+// Display order: the capacitive Home key, then every key this board lets the
+// user bind, then the power button. A tap row and a hold row for each -- the
+// keys themselves come from CONFIGURABLE_KEYS so a build that has more of them
+// (or fewer) needs no edit here.
+const std::vector<StrId>& rowNames() {
+  static const std::vector<StrId> rows = [] {
+    std::vector<StrId> v{StrId::STR_HOME_KEY_TAP, StrId::STR_HOME_KEY_HOLD};
+    for (const ConfigurableKey& key : CONFIGURABLE_KEYS) {
+      v.push_back(key.tapName);
+      v.push_back(key.holdName);
+    }
+    v.push_back(StrId::STR_SHORT_PWR_BTN);
+    v.push_back(StrId::STR_PWR_BTN_HOLD);
+    return v;
+  }();
+  return rows;
+}
 }  // namespace
 
 bool KeyActionsSettingsActivity::owns(const StrId nameId) {
-  return std::find(std::begin(kRows), std::end(kRows), nameId) != std::end(kRows);
+  const auto& rows = rowNames();
+  return std::find(rows.begin(), rows.end(), nameId) != rows.end();
 }
 
 KeyActionsSettingsActivity::KeyActionsSettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
@@ -37,7 +49,7 @@ void KeyActionsSettingsActivity::onEnter() {
   // Home key, no expander button) simply never turns up.
   rows_.clear();
   const auto all = getSettingsList(&sdFontSystem.registry());
-  for (const StrId id : kRows) {
+  for (const StrId id : rowNames()) {
     const auto it = std::find_if(all.begin(), all.end(), [id](const SettingInfo& s) { return s.nameId == id; });
     if (it != all.end()) rows_.push_back(*it);
   }

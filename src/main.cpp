@@ -28,9 +28,11 @@
 #include <esp_sntp.h>
 #endif
 
+#include <array>
 #include <cstring>
 
 #include "BatteryLog.h"
+#include "ConfigurableKeys.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "KOReaderCredentialStore.h"
@@ -562,79 +564,20 @@ static bool dispatchConfigurableButtons() {
     }
   }
 
-#if FREEINK_DEVICE_LILYGO
-  // The expander user button reaches InputManager as BTN_DOWN (board hook); it
-  // is masked out of the normal queries so only this dispatcher sees it.
-  static ConfigurableButton userBtn;
-  consumed =
-      serviceConfigurableButton(userBtn, gpio.rawIsPressed(HalGPIO::BTN_DOWN), gpio.rawWasReleased(HalGPIO::BTN_DOWN),
-                                SETTINGS.userBtnShortAction, SETTINGS.userBtnLongAction) ||
-      consumed;
-
-  // A switch soldered to GPIO10 (the parked LoRa IRQ), read straight off the
-  // SoC rather than through the expander: nothing else claims the pin once
-  // BoardT5S3::disableGpsLora() has left it an input. Pulled up here, so the
-  // switch shorts to GND and pressed reads LOW. Sampled only while the user
-  // has turned it on -- an unwired pin floats, and a floating input would
-  // fire actions on its own.
-  static bool aux10Configured = false;
-  if (SETTINGS.aux10Enabled) {
-    if (!aux10Configured) {
-      pinMode(T5S3_LORA_IRQ, INPUT_PULLUP);
-      aux10Configured = true;
-    }
-    // Debounce in software. The board's own keys arrive through InputManager,
-    // which does this for them; a switch soldered to a bare pin does not, and a
-    // cheap one chatters hard -- a bench trace of one press showed the line
-    // crossing 60+ times in 14 s, every bounce a fresh tap for the dispatcher
-    // below.
-    //
-    // Fast attack, slow release. The old form waited for the level to hold
-    // steady across two *polls* before committing it, in either direction --
-    // and a poll is only as frequent as the loop runs. Mid-book the loop is in
-    // 150 ms light sleep, and GPIO10 was not a wake source, so a press was not
-    // even looked at until the timer woke the CPU: press seen at one wake,
-    // confirmed at the next, release seen at a third, confirmed at a fourth.
-    // That is the ~600 ms of holding a "tap" needed. The press edge now commits
-    // on sight (chatter is absorbed by a lockout after the previous commit),
-    // and only the release -- the edge that fires the tap action -- waits to be
-    // sure the line has settled. The pin is armed as a light-sleep wake source
-    // in armLightSleepWakeSources(), so the press itself now wakes the CPU.
-    static constexpr unsigned long AUX10_PRESS_LOCKOUT_MS = 40;
-    static constexpr unsigned long AUX10_RELEASE_SETTLE_MS = 25;
-    static bool aux10Stable = false;  // debounced level, true = pressed
-    static unsigned long aux10LastCommit = 0;
-    static unsigned long aux10HighSince = 0;
-    const unsigned long nowMs = millis();
-    const bool raw = digitalRead(T5S3_LORA_IRQ) == LOW;
-
-    if (raw) {
-      aux10HighSince = 0;
-      if (!aux10Stable && nowMs - aux10LastCommit >= AUX10_PRESS_LOCKOUT_MS) {
-        aux10Stable = true;
-        aux10LastCommit = nowMs;
-        LOG_DBG("AUX10", "press");
-      }
-    } else if (aux10Stable) {
-      if (aux10HighSince == 0) {
-        aux10HighSince = nowMs;
-      } else if (nowMs - aux10HighSince >= AUX10_RELEASE_SETTLE_MS) {
-        aux10Stable = false;
-        aux10LastCommit = nowMs;
-        aux10HighSince = 0;
-        LOG_DBG("AUX10", "release");
-      }
-    }
-
-    static ConfigurableButton aux10Btn;
-    const bool down = aux10Stable;
-    consumed = serviceConfigurableButton(aux10Btn, down, false, SETTINGS.aux10ShortAction, SETTINGS.aux10LongAction) ||
+  // Every key the user gets to bind. They are ordinary board keys as far as the
+  // HAL is concerned -- debounced, edge-detected, masked out of the normal
+  // queries so they cannot scroll a list behind the user's back -- and this is
+  // the only place their identity is read. Serial-injected presses arrive on
+  // the same path, which is what makes them testable without the hardware.
+  // std::array, not a C array: a board with no configurable keys leaves the
+  // table empty, and a zero-length C array is not a thing the standard has.
+  static std::array<ConfigurableButton, CONFIGURABLE_KEYS.size()> buttons;
+  for (size_t i = 0; i < CONFIGURABLE_KEYS.size(); i++) {
+    const ConfigurableKey& key = CONFIGURABLE_KEYS[i];
+    consumed = serviceConfigurableButton(buttons[i], gpio.rawIsPressed(key.button), gpio.rawWasReleased(key.button),
+                                         SETTINGS.*key.shortAction, SETTINGS.*key.longAction) ||
                consumed;
-  } else if (aux10Configured) {
-    pinMode(T5S3_LORA_IRQ, INPUT);  // back to how disableGpsLora() left it
-    aux10Configured = false;
   }
-#endif
 
   return consumed;
 }
@@ -726,13 +669,11 @@ void setup() {
   silentRebootTarget = 0;
 
   gpio.begin();
-#if FREEINK_DEVICE_LILYGO
-  // The expander user button (IO48) arrives as BTN_DOWN from the board hook.
-  // Hide it from the normal button queries so it cannot scroll lists behind the
-  // user's back: dispatchConfigurableButtons() owns it and turns its tap/hold
-  // into the configured actions. Serial-injected DOWN still works (debugging).
-  gpio.setMaskedButtons(1u << HalGPIO::BTN_DOWN);
-#endif
+  // Hide every configurable key from the normal button queries so none of them
+  // can scroll a list behind the user's back: dispatchConfigurableButtons()
+  // owns them and turns each tap/hold into the configured action. Serial
+  // injection bypasses the mask, so those presses still work for debugging.
+  gpio.setMaskedButtons(configurableKeyMask());
   powerManager.begin();
   halTiltSensor.begin();
   halClock.begin();
@@ -1570,12 +1511,17 @@ void armLightSleepWakeSources() {
     gpio_pullup_en(gpio);
     gpio_wakeup_enable(gpio, GPIO_INTR_LOW_LEVEL);
   };
+  // Every key the board has a pin for. A key that cannot wake the CPU is not
+  // read until the 150 ms timer does, and a debounce then needs a second sample
+  // after that -- which is how a tap came to want ~600 ms of holding before the
+  // pins moved into BoardConfig. Unwired pins are safe to arm: the HAL holds
+  // them pulled up, so an empty pad sits HIGH rather than waking on noise.
+  const auto& input = BoardConfig::ACTIVE.input;
+  for (const int8_t pin : {input.back, input.confirm, input.left, input.right, input.up, input.down, input.power}) {
+    arm(pin);
+  }
 #if FREEINK_DEVICE_LILYGO
-  arm(T5S3_BOOT_BTN);     // page back / power
-  arm(T5S3_PCA9535_INT);  // page forward, behind the expander
-  // Only when the user has said a switch is wired there: an unwired input
-  // floats, and a floating wake source would wake the CPU at random.
-  if (SETTINGS.aux10Enabled) arm(T5S3_LORA_IRQ);
+  arm(T5S3_PCA9535_INT);  // the expander key, which has no pin of its own
 #endif
   arm(BoardConfig::ACTIVE.touch.irq);  // touch and the capacitive home key
   esp_sleep_enable_gpio_wakeup();

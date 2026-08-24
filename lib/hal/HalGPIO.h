@@ -100,8 +100,14 @@ class HalGPIO {
   // Configurable action buttons: a masked button is hidden from the normal
   // queries above (its raw identity must not leak to activities) and is read
   // through the raw* accessors by main.cpp's dispatcher, which translates
-  // short/long presses into user-configured actions. Injected buttons bypass
-  // the mask so a dispatched action can synthesize the same button cleanly.
+  // short/long presses into user-configured actions.
+  //
+  // The mask applies to injected buttons too, which is what makes CMD:KEY on a
+  // masked button emulate that key rather than the meaning it used to have:
+  // inject UP on a board whose UP pin is a configurable key and you get the
+  // action bound to that key, not a scroll. Anything that needs the meaning
+  // asks for it directly -- a dispatched Back is MappedInputManager::
+  // requestBackAction(), not a synthesized BTN_BACK.
   void setMaskedButtons(uint8_t mask) { maskedButtons = mask; }
   bool rawIsPressed(uint8_t buttonIndex) const;
   bool rawWasPressed(uint8_t buttonIndex) const;

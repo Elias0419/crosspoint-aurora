@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "ConfigurableKeys.h"
 #include "CrossPointSettings.h"
 #include "KOReaderCredentialStore.h"
 #include "ReaderFontSizes.h"
@@ -428,14 +429,24 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                           "userBtnShortAction", StrId::STR_CAT_CONTROLS),
         SettingInfo::Enum(StrId::STR_USER_BTN_HOLD, &CrossPointSettings::userBtnLongAction, buttonActionValues(),
                           "userBtnLongAction", StrId::STR_CAT_CONTROLS),
-        // GPIO10 carries no key on a stock board, so the pin is only sampled
-        // once its own toggle is on -- see aux10Enabled.
-        SettingInfo::Toggle(StrId::STR_AUX10_ENABLE, &CrossPointSettings::aux10Enabled, "aux10Enabled",
-                            StrId::STR_CAT_CONTROLS),
-        SettingInfo::Enum(StrId::STR_AUX10_TAP, &CrossPointSettings::aux10ShortAction, buttonActionValues(),
-                          "aux10ShortAction", StrId::STR_CAT_CONTROLS),
-        SettingInfo::Enum(StrId::STR_AUX10_HOLD, &CrossPointSettings::aux10LongAction, buttonActionValues(),
-                          "aux10LongAction", StrId::STR_CAT_CONTROLS),
+        // The four spare pads on a T5 S3 Pro Lite, named by pin. Filtered out
+        // below on every build whose board does not offer them.
+        SettingInfo::Enum(StrId::STR_KEY_G10_TAP, &CrossPointSettings::keyG10ShortAction, buttonActionValues(),
+                          "keyG10ShortAction", StrId::STR_CAT_CONTROLS),
+        SettingInfo::Enum(StrId::STR_KEY_G10_HOLD, &CrossPointSettings::keyG10LongAction, buttonActionValues(),
+                          "keyG10LongAction", StrId::STR_CAT_CONTROLS),
+        SettingInfo::Enum(StrId::STR_KEY_G1_TAP, &CrossPointSettings::keyG1ShortAction, buttonActionValues(),
+                          "keyG1ShortAction", StrId::STR_CAT_CONTROLS),
+        SettingInfo::Enum(StrId::STR_KEY_G1_HOLD, &CrossPointSettings::keyG1LongAction, buttonActionValues(),
+                          "keyG1LongAction", StrId::STR_CAT_CONTROLS),
+        SettingInfo::Enum(StrId::STR_KEY_G46_TAP, &CrossPointSettings::keyG46ShortAction, buttonActionValues(),
+                          "keyG46ShortAction", StrId::STR_CAT_CONTROLS),
+        SettingInfo::Enum(StrId::STR_KEY_G46_HOLD, &CrossPointSettings::keyG46LongAction, buttonActionValues(),
+                          "keyG46LongAction", StrId::STR_CAT_CONTROLS),
+        SettingInfo::Enum(StrId::STR_KEY_G47_TAP, &CrossPointSettings::keyG47ShortAction, buttonActionValues(),
+                          "keyG47ShortAction", StrId::STR_CAT_CONTROLS),
+        SettingInfo::Enum(StrId::STR_KEY_G47_HOLD, &CrossPointSettings::keyG47LongAction, buttonActionValues(),
+                          "keyG47LongAction", StrId::STR_CAT_CONTROLS),
     // BOOT tap keeps its own option list: Confirm/Footnotes are power-button
     // specific, and the stored indices are load-bearing (SHORT_PWRBTN).
     // Tap sits before hold, matching the other key pairs above.
@@ -611,17 +622,18 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                            }),
             v.end());
   }
-#if !FREEINK_DEVICE_LILYGO
-  // The configurable user button is the LilyGo T5S3's expander key (IO48); no
-  // other supported board routes a key through that dispatcher.
+  // Every key whose action the user picks is listed in CONFIGURABLE_KEYS, so
+  // that table decides which of these rows a build has any use for: the
+  // expander key on a LilyGo T5S3, plus the four spare pads on a Pro Lite.
   v.erase(std::remove_if(v.begin(), v.end(),
                          [](const SettingInfo& s) {
-                           return s.nameId == StrId::STR_USER_BTN_TAP || s.nameId == StrId::STR_USER_BTN_HOLD ||
-                                  s.nameId == StrId::STR_AUX10_ENABLE || s.nameId == StrId::STR_AUX10_TAP ||
-                                  s.nameId == StrId::STR_AUX10_HOLD;
+                           if (!isConfigurableKeyRow(s.nameId)) return false;
+                           for (const ConfigurableKey& key : CONFIGURABLE_KEYS) {
+                             if (key.tapName == s.nameId || key.holdName == s.nameId) return false;
+                           }
+                           return true;
                          }),
           v.end());
-#endif
   // Reader Menu Style picks between the list menu and the toolbar overlay --
   // but a theme that owns the reader chrome (Aurora) always draws the toolbar,
   // so on that theme the row is a switch with nothing behind it.
@@ -631,13 +643,14 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
             v.end());
   }
   // Side-button layout swaps which of the two side keys pages forward. A board
-  // with neither (the T5 S3 pages from the expander key and the glass, and that
-  // key is masked out of the normal queries) has nothing for it to swap.
+  // with no key that pages by itself has nothing for it to swap -- the T5 S3
+  // has input pins, but every one of them is a configurable key, so what they
+  // do is a binding rather than a layout.
   // "Long-press button behaviour" goes with it: it is what a held PAGE-TURN
   // BUTTON does (skip ten pages, or rotate), and a board with no page-turn
   // buttons has no press to hold. A held touch zone still reaches the same
   // code, but that is not what the row says it configures, and it defaults off.
-  if (BoardConfig::ACTIVE.input.up < 0 && BoardConfig::ACTIVE.input.down < 0) {
+  if (!hasPageTurnButtons()) {
     v.erase(std::remove_if(v.begin(), v.end(),
                            [](const SettingInfo& s) {
                              return s.nameId == StrId::STR_SIDE_BTN_LAYOUT ||

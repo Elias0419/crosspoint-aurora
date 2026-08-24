@@ -12,6 +12,7 @@
 
 #include "ButtonRemapActivity.h"
 #include "ClearCacheActivity.h"
+#include "ConfigurableKeys.h"
 #include "ControlCenterSettingsActivity.h"
 #include "CrossPointSettings.h"
 #include "DropCapFontSelectionActivity.h"
@@ -491,7 +492,7 @@ void SettingsActivity::buildAuroraEntries() {
     // layout and a dozen per-key action pickers in one undivided run. Split it
     // the way the hardware does, and let anything unlisted fall through to a
     // trailing group so a new setting still shows up without being placed here.
-    auto addGroupFrom = [&](const std::vector<SettingInfo>& vec, StrId header, std::initializer_list<StrId> ids,
+    auto addGroupFrom = [&](const std::vector<SettingInfo>& vec, StrId header, const std::vector<StrId>& ids,
                             std::vector<StrId>& placed) {
       bool headerAdded = false;
       for (StrId id : ids) {
@@ -518,11 +519,16 @@ void SettingsActivity::buildAuroraEntries() {
                   StrId::STR_LONG_PRESS_BEHAVIOR, StrId::STR_LONG_PRESS_MENU, StrId::STR_BACK_SHORT_TO_FILE_BROWSER,
                   StrId::STR_PWR_BTN_FOOTNOTE_BACK},
                  placedControls);
-    addGroupFrom(controlsSettings, StrId::STR_SEC_KEY_ACTIONS,
-                 {StrId::STR_HOME_KEY_TAP, StrId::STR_HOME_KEY_HOLD, StrId::STR_USER_BTN_TAP, StrId::STR_USER_BTN_HOLD,
-                  StrId::STR_AUX10_ENABLE, StrId::STR_AUX10_TAP, StrId::STR_AUX10_HOLD, StrId::STR_SHORT_PWR_BTN,
-                  StrId::STR_PWR_BTN_HOLD},
-                 placedControls);
+    {
+      std::vector<StrId> keyRows{StrId::STR_HOME_KEY_TAP, StrId::STR_HOME_KEY_HOLD};
+      for (const ConfigurableKey& key : CONFIGURABLE_KEYS) {
+        keyRows.push_back(key.tapName);
+        keyRows.push_back(key.holdName);
+      }
+      keyRows.push_back(StrId::STR_SHORT_PWR_BTN);
+      keyRows.push_back(StrId::STR_PWR_BTN_HOLD);
+      addGroupFrom(controlsSettings, StrId::STR_SEC_KEY_ACTIONS, keyRows, placedControls);
+    }
     {
       std::vector<SettingInfo> leftover;
       for (const auto& s : controlsSettings) {

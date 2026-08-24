@@ -285,12 +285,19 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t homeKeyLongAction = BTN_ACT_CONTROL_CENTER;
   uint8_t userBtnShortAction = BTN_ACT_PAGE_NEXT;
   uint8_t userBtnLongAction = BTN_ACT_TOUCH_TOGGLE;
-  // A switch wired to the T5 S3's spare GPIO10 (the LoRa IRQ pin, unused once
-  // the radio is parked). Off by default: the pin floats on a board with
-  // nothing attached, and a floating input would fire actions by itself.
-  uint8_t aux10Enabled = 0;
-  uint8_t aux10ShortAction = BTN_ACT_PAGE_PREV;
-  uint8_t aux10LongAction = BTN_ACT_NONE;
+  // Keys soldered to the four pads a T5 S3 Pro Lite has spare where the LoRa
+  // module would sit, named by their pin. All four default to doing nothing:
+  // the pads reach nothing on an unmodified device, and a key that does not
+  // exist should not be listed as bound to anything. There is no enable toggle
+  // -- the HAL holds the pins pulled up, so an empty pad reads "not pressed".
+  uint8_t keyG10ShortAction = BTN_ACT_NONE;
+  uint8_t keyG10LongAction = BTN_ACT_NONE;
+  uint8_t keyG1ShortAction = BTN_ACT_NONE;
+  uint8_t keyG1LongAction = BTN_ACT_NONE;
+  uint8_t keyG46ShortAction = BTN_ACT_NONE;
+  uint8_t keyG46LongAction = BTN_ACT_NONE;
+  uint8_t keyG47ShortAction = BTN_ACT_NONE;
+  uint8_t keyG47LongAction = BTN_ACT_NONE;
   uint8_t pwrBtnLongAction = BTN_ACT_SLEEP;
   // Control center contents (ControlCenterSettingsActivity). One flag per
   // quick-setting tile; the frontlight row is not listed because it is the
