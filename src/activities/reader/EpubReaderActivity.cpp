@@ -259,7 +259,6 @@ void EpubReaderActivity::openReaderMenu() {
     overlay = Overlay::Toolbar;
     focusedTool = 0;
     panelHoldJumped = false;
-    panelFirstRow = -1;
     panelCursorShown = !mappedInput.hasTouch();
     if (!toolbarUi) toolbarUi = std::make_unique<ReaderToolbarUi>(renderer);
     toolbarUi->begin();
@@ -1839,7 +1838,6 @@ void EpubReaderActivity::openOverlay(Overlay target) {
       break;
   }
   panelHoldJumped = false;
-  panelFirstRow = -1;  // a freshly opened panel shows the cursor row / the top
 
   // The page is already on screen and still in the framebuffer, so paint the
   // chrome straight onto it and push one refresh. requestUpdate() would
@@ -1855,15 +1853,6 @@ void EpubReaderActivity::openOverlay(Overlay target) {
   // snappy and flash-free. On other panels HALF is the flashing quality mode,
   // and FAST is clean for every transition.
   if (section) {
-    // The render task may still be drawing (and pushing) the page: the
-    // anti-aliased path sends a base frame and two grey planes, and the last
-    // of them can be in flight after render() returns. Painting the chrome
-    // into that same framebuffer, or starting a second waveform on top of a
-    // running one, wedges the panel -- which is what "open the menu while the
-    // page is still resolving" looked like. Take the render lock so this waits
-    // out the page, then wait out the refresh it started.
-    RenderLock lock;
-    renderer.waitRefreshComplete();
     if (previous == Overlay::None) {
       // Snapshot the clean page so stepping back from a panel to the toolbar
       // (and closing, where supported) can restore it without a re-render.
@@ -1884,8 +1873,6 @@ void EpubReaderActivity::closeOverlayToPage() {
   overlay = Overlay::None;
   toolbarUi.reset();  // ~1 KB of interaction table + props, only needed while open
   if (!gpio.isXteinkDevice() && overlayPageStored) {
-    RenderLock lock;  // see openOverlay: never push over a render in flight
-    renderer.waitRefreshComplete();
     renderer.restoreBwBuffer();
     overlayPageStored = false;
     renderer.displayBuffer(HalDisplay::FAST_REFRESH);
@@ -1930,7 +1917,6 @@ void EpubReaderActivity::renderOverlay() {
   // Tap-first: the cursor is only drawn once a button has moved it, so a
   // tapped row does not stay inverted after its action.
   model.selectedIndex = panelCursorShown ? panelIndex : -1;
-  model.firstRow = panelFirstRow;
   if (overlay == Overlay::Contents) {
     model.panelTitle = tr(STR_TOOL_CONTENTS);
     model.itemCount = epub->getTocItemsCount();
@@ -1962,8 +1948,6 @@ void EpubReaderActivity::renderOverlay() {
 void EpubReaderActivity::handleOverlayInput() {
   if (!toolbarUi) return;
   const auto fastRedraw = [this] {
-    RenderLock lock;  // see openOverlay: never push over a render in flight
-    renderer.waitRefreshComplete();
     renderOverlay();
     renderer.displayBuffer(HalDisplay::FAST_REFRESH);
   };
@@ -1986,17 +1970,9 @@ void EpubReaderActivity::handleOverlayInput() {
     return tool == 0 ? Overlay::Contents : (tool == 1 ? Overlay::Text : Overlay::More);
   };
 
-  // A swipe over an open panel pages the list, and it has to be taken before
-  // the frame is routed: the release lands inside a row's rect, so routing it
-  // would activate that row instead (and the "was anything routed" guard below
-  // would swallow the swipe entirely). The toolbar keeps routing swipes -- its
-  // scrub track is a drag target.
-  const auto swipe = overlay != Overlay::Toolbar ? mappedInput.wasSwipe() : MappedInputManager::SwipeDir::None;
-  const bool pagingSwipe = swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down;
-
   // Touch first: FreeInkUI routes the frame against the tap targets the last
   // render registered and hands back the action it mapped to.
-  const auto routed = pagingSwipe ? ReaderToolbarUi::Routed{} : toolbarUi->route(mappedInput);
+  const auto routed = toolbarUi->route(mappedInput);
 
   // --- Toolbar ---
   if (overlay == Overlay::Toolbar) {
@@ -2120,30 +2096,19 @@ void EpubReaderActivity::handleOverlayInput() {
     // it (2+ refreshes -> one FAST). Re-store right away so another panel
     // round-trip can restore again.
     if (overlayPageStored) {
-      {
-        RenderLock lock;  // see openOverlay
-        renderer.waitRefreshComplete();
-        renderer.restoreBwBuffer();
-        overlayPageStored = renderer.storeBwBuffer();
-      }
+      renderer.restoreBwBuffer();
+      overlayPageStored = renderer.storeBwBuffer();
       fastRedraw();
       return;
     }
     requestUpdate();
   };
 
-  // Pages the list by one screen of rows. Drives the viewport directly rather
-  // than moving the cursor into it: on a touch board the cursor is hidden, and
-  // an invisible selection is not something the viewport can follow. The
-  // cursor rides along anyway, so a later button press continues from what is
-  // on screen.
+  // Pages the list by one screen of rows; the cursor rides along so the
+  // buttons continue from what is shown.
   const auto pageList = [this, count, pageRows, &fastRedraw](int direction) {
     if (count <= 0) return;
-    const int top = panelFirstRow >= 0 ? panelFirstRow : toolbarUi->topIndex();
-    const int next = std::clamp(top + direction * pageRows, 0, std::max(0, count - pageRows));
-    if (next == top) return;
-    panelFirstRow = next;
-    panelIndex = std::clamp(panelIndex, next, std::min(count - 1, next + pageRows - 1));
+    panelIndex = std::clamp(panelIndex + direction * pageRows, 0, count - 1);
     fastRedraw();
   };
 
@@ -2177,11 +2142,13 @@ void EpubReaderActivity::handleOverlayInput() {
     default:
       break;
   }
-  if (pagingSwipe) {
+  if (routed.routed) return;  // consumed by the chrome (title band, dead space)
+
+  const auto swipe = mappedInput.wasSwipe();
+  if (swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down) {
     pageList(swipe == MappedInputManager::SwipeDir::Up ? 1 : -1);
     return;
   }
-  if (routed.routed) return;  // consumed by the chrome (title band, dead space)
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     dismissPanel();
@@ -2208,7 +2175,6 @@ void EpubReaderActivity::handleOverlayInput() {
       panelIndex = std::clamp(panelIndex + step, 0, count - 1);
       panelHoldJumped = true;
       panelCursorShown = true;
-      panelFirstRow = -1;  // the cursor drives the viewport again
       fastRedraw();
       return;
     }
@@ -2222,7 +2188,6 @@ void EpubReaderActivity::handleOverlayInput() {
         panelIndex = releasedUp ? ButtonNavigator::previousIndex(panelIndex, count)
                                 : ButtonNavigator::nextIndex(panelIndex, count);
         panelCursorShown = true;
-        panelFirstRow = -1;  // the cursor drives the viewport again
         fastRedraw();
       }
       panelHoldJumped = false;

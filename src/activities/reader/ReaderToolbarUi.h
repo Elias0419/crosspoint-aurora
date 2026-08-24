@@ -36,9 +36,6 @@ class ReaderToolbarUi : public UiAppHost {
     const char* panelTitle = nullptr;
     int itemCount = 0;
     int selectedIndex = -1;  // row the buttons' cursor sits on; -1 = none shown
-    // First row to show, for paging with no visible cursor to follow (a touch
-    // board's swipe / edge tap). -1 keeps the viewport on the cursor.
-    int firstRow = -1;
     std::function<std::string(int)> rowText;
     std::function<std::string(int)> rowValue;
     // Tile row: the tool in focus (toolbar) / the open panel (panel). 0..2.
@@ -84,7 +81,6 @@ class ReaderToolbarUi : public UiAppHost {
   void buildPanel(UiScreen& screen);
   void buildToolRow(UiScreen& screen, freeink::ui::LayoutAnchor anchor);
   void buildHeader(UiScreen& screen);
-  int16_t panelRowHeight(const UiScreen& screen) const;
   int16_t toolRowHeight(const UiScreen& screen) const;
 
   Model model_;

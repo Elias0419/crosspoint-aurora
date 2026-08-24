@@ -68,9 +68,6 @@ class EpubReaderActivity final : public ReaderActivity {
   // Whether the panel draws its cursor row. Button boards always do; touch
   // boards only once a button has moved it, so a tapped row is not left inverted.
   bool panelCursorShown = false;
-  // First row the panel shows while paging with the cursor hidden; -1 lets the
-  // viewport follow the cursor (see ReaderToolbarUi::Model::firstRow).
-  int panelFirstRow = -1;
   // FreeInkUI chrome + tap targets for the overlay; created when it opens,
   // released when it closes.
   std::unique_ptr<ReaderToolbarUi> toolbarUi;

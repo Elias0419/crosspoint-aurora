@@ -115,13 +115,6 @@ void ReaderToolbarUi::screenFn(UiScreen& screen, void* user) {
   }
 }
 
-// Button boards keep the theme's denser list row (as every other list there
-// does); touch boards use FreeInkUI's finger-sized default.
-int16_t ReaderToolbarUi::panelRowHeight(const UiScreen& screen) const {
-  return model_.denseRows ? static_cast<int16_t>(UITheme::getInstance().getMetrics().listRowHeight)
-                          : screen.theme().rowHeight;
-}
-
 int16_t ReaderToolbarUi::toolRowHeight(const UiScreen& screen) const {
   (void)screen;
   return kToolRowH;
@@ -333,23 +326,7 @@ void ReaderToolbarUi::buildPanel(UiScreen& screen) {
   sheetProps.dismissAction = ACTION_DISMISS;  // tap the page above the sheet = back to the toolbar
   sheetProps.grabberMargin = tokens.spaceMd;
   sheetProps.grabberInset = tokens.spaceMd;
-
-  // Sheet height: as tall as the rows need, capped so some page still shows.
-  // A fixed fraction was fine in portrait and far too short in landscape --
-  // 62% of a 540px-high frame leaves room for two rows once the title, the
-  // tool row and the hint band have taken their share.
-  const int16_t rowH = panelRowHeight(screen);
-  const int16_t titleH = screen.target().lineHeight(tokens.titleText.font);
-  const int16_t chrome = static_cast<int16_t>(
-      tokens.spaceLg + titleH + tokens.spaceMd + kToolRowH + 2 * tokens.spaceSm + std::max(0, model_.bottomReserve) +
-      sheetProps.grabberMargin + sheetProps.grabberHeight + sheetProps.grabberInset);
-  const int16_t wanted = static_cast<int16_t>(chrome + std::max(1, model_.itemCount) * rowH);
-  // Landscape has little height to spare, so it keeps a smaller slice of page
-  // visible than portrait does; both leave enough to see where you are.
-  const bool landscape = safe.width > safe.height;
-  const int16_t maxH = static_cast<int16_t>((safe.height * (landscape ? 86 : kPanelHeightPercent)) / 100);
-  const int16_t minH = static_cast<int16_t>(std::min<int>(maxH, chrome + rowH));
-  screen.sheet(sheetProps, std::clamp(wanted, minH, maxH));
+  screen.sheet(sheetProps, static_cast<int16_t>((safe.height * kPanelHeightPercent) / 100));
   screen.insetContent(fui::Insets{0, tokens.spaceLg, 0, tokens.spaceLg});
 
   // Title line: panel name left, page position right when the list spans pages.
@@ -372,22 +349,19 @@ void ReaderToolbarUi::buildPanel(UiScreen& screen) {
   listProps_.count = static_cast<uint16_t>(std::max(0, model_.itemCount));
   listProps_.action = ACTION_ROW;
   listProps_.inputMask = fui::InputTouch;  // physical buttons stay with the reader
-  listProps_.rowHeight = panelRowHeight(screen);
+  listProps_.rowHeight =
+      model_.denseRows ? static_cast<int16_t>(UITheme::getInstance().getMetrics().listRowHeight) : tokens.rowHeight;
   const fui::Rect listRect = screen.body();
   const uint16_t rows = fui::listVisibleRows(listRect, listProps_.rowHeight, tokens.listRowGap);
   visibleRows_ = rows > 0 ? rows : 1;
   const int selected = std::clamp(model_.selectedIndex, -1, model_.itemCount - 1);
-  if (model_.itemCount <= 0) {
-    topIndex_ = 0;
-  } else if (model_.firstRow >= 0) {
-    // Explicit viewport: paging with the cursor hidden (touch boards) has no
-    // selection for listTopIndexFor to follow, so the caller says which row
-    // goes at the top and this only keeps it in range.
-    topIndex_ = std::clamp(model_.firstRow, 0, std::max(0, model_.itemCount - visibleRows_));
-  } else {
+  if (model_.itemCount > 0) {
+    // Follow the cursor (or the row the reader asked to show) into view.
     const int follow = selected >= 0 ? selected : std::min(topIndex_, model_.itemCount - 1);
     topIndex_ = fui::listTopIndexFor(static_cast<int16_t>(follow), static_cast<uint16_t>(std::max(0, topIndex_)),
                                      static_cast<uint16_t>(visibleRows_), static_cast<uint16_t>(model_.itemCount));
+  } else {
+    topIndex_ = 0;
   }
 
   // Materialise only the visible window of rows.
