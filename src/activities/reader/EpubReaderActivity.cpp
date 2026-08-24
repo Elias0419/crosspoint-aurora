@@ -1973,7 +1973,14 @@ void EpubReaderActivity::closeOverlayToPage() {
   overlay = Overlay::None;
   overlayPopup.dismiss();  // an option picker cannot outlive its panel
   toolbarUi.reset();       // ~1 KB of interaction table + props, only needed while open
-  if (!xteinkClassPanel() && overlayPageStored) {
+  // The snapshot is the B/W frame only. Anti-aliasing lives in the two
+  // grayscale planes, which are pushed to the panel and not kept anywhere --
+  // and the base frame paints every fringe pixel BLACK for the planes to lift
+  // afterwards. Restoring it therefore hands back a page whose glyph edges are
+  // solid black: visibly chunkier than the page that was there a moment ago,
+  // until the next page turn re-renders it. So the fast restore is only for
+  // pages that have no greys to lose.
+  if (!xteinkClassPanel() && overlayPageStored && !SETTINGS.textAntiAliasing) {
     RenderLock lock;  // the render task shares the framebuffer
     // No baseline resync: the glass shows the chrome, and erasing it needs
     // the differential to keep diffing against the last pushed frame.
@@ -2217,7 +2224,11 @@ void EpubReaderActivity::handleOverlayInput() {
     // Restore the snapshotted page under the toolbar instead of re-rendering
     // it (2+ refreshes -> one FAST). Re-store right away so another panel
     // round-trip can restore again.
-    if (overlayPageStored) {
+    // Same caveat as closeOverlayToPage(): the snapshot carries no greys, so
+    // an anti-aliased page has to be re-rendered rather than restored -- the
+    // strip of page above the toolbar would otherwise come back with solid
+    // black glyph edges.
+    if (overlayPageStored && !SETTINGS.textAntiAliasing) {
       {
         RenderLock lock;  // the render task shares the framebuffer
         // No baseline resync: the glass shows the panel, and erasing it needs
@@ -2228,6 +2239,7 @@ void EpubReaderActivity::handleOverlayInput() {
       fastRedraw();  // takes its own RenderLock
       return;
     }
+    discardOverlayPage();
     requestUpdate();
   };
 
