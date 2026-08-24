@@ -19,7 +19,14 @@
 #elif FREEINK_DEVICE_M5PAPER
 #define CROSSPOINT_BOARD_NAME "m5paper"
 #elif FREEINK_DEVICE_LILYGO
+// Same PCB, two binaries: the Lite build hands the four unpopulated LoRa pins
+// to the user as keys, which is the wrong thing to do to a board that has the
+// radio on them. Separate tags keep OTA and the SD updater from crossing them.
+#if T5S3_HAS_LORA_GPS
+#define CROSSPOINT_BOARD_NAME "lilygo-pro"
+#else
 #define CROSSPOINT_BOARD_NAME "lilygo"
+#endif
 #elif FREEINK_DEVICE_M5
 #define CROSSPOINT_BOARD_NAME "m5"
 #elif FREEINK_DEVICE_MURPHY

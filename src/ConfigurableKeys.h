@@ -28,8 +28,8 @@
 // owner was reading, because the inactivity timer had never heard of it.
 struct ConfigurableKey {
   uint8_t button;  // HalGPIO::BTN_*
-  uint8_t CrossPointSettings::*shortAction;
-  uint8_t CrossPointSettings::*longAction;
+  uint8_t CrossPointSettings::* shortAction;
+  uint8_t CrossPointSettings::* longAction;
   StrId tapName;
   StrId holdName;
 };
@@ -38,8 +38,8 @@ struct ConfigurableKey {
 // BoardT5S3's input hook reports it as BTN_DOWN, which is why the profile
 // leaves DOWN unassigned.
 inline constexpr ConfigurableKey KEY_EXPANDER = {HalGPIO::BTN_DOWN, &CrossPointSettings::userBtnShortAction,
-                                                &CrossPointSettings::userBtnLongAction, StrId::STR_USER_BTN_TAP,
-                                                StrId::STR_USER_BTN_HOLD};
+                                                 &CrossPointSettings::userBtnLongAction, StrId::STR_USER_BTN_TAP,
+                                                 StrId::STR_USER_BTN_HOLD};
 
 // The four pads a T5 S3 Pro Lite has spare where the LoRa module would sit,
 // named by the pin a key gets soldered to. See BoardT5S3Pins.h for why these

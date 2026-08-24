@@ -28,6 +28,8 @@ jobs:
         include:
           - board: lilygo
             pio_env: lilygo
+          - board: lilygo-pro
+            pio_env: lilygo_pro
           - board: x4pro
             pio_env: x4pro
           - board: x4

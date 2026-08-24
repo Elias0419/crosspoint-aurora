@@ -30,6 +30,8 @@ jobs:
             asset: firmware-papermono.bin
           - pio_env: lilygo-gh_release
             asset: firmware-lilygo.bin
+          - pio_env: lilygo_pro-gh_release
+            asset: firmware-lilygo-pro.bin
     steps:
       - uses: actions/checkout@v6
         with:

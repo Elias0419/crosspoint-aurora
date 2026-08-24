@@ -8,7 +8,8 @@ Arduino-ESP32 offsets (0x0 / 0x8000 / 0xe000 / 0x10000). The version comes
 from platformio.ini's [crosspoint] version.
 
 Usage:  python scripts/build_flasher_site.py --out site [--env lilygo=lilygo ...]
-Boards default to lilygo/x4pro/x4 built from the envs lilygo / x4pro / default.
+Boards default to lilygo/lilygo-pro/x4pro/x4, built from the envs of the same
+name (lilygo_pro for the Pro, default for the C3 X4/X3).
 Boards whose build directory is missing are skipped (with a warning), so a
 partial matrix still produces a usable site.
 """
@@ -22,8 +23,18 @@ from pathlib import Path
 BOARDS = {
     # board id -> (pio env, chip family as ESP Web Tools names it)
     "lilygo": ("lilygo", "ESP32-S3"),
+    "lilygo-pro": ("lilygo_pro", "ESP32-S3"),
     "x4pro": ("x4pro", "ESP32-S3"),
     "x4": ("default", "ESP32-C3"),
+}
+# What ESP Web Tools calls the device in its install dialog. That dialog is the
+# last thing between someone and the wrong binary, so it spells the variant out
+# rather than repeating the board id.
+NAMES = {
+    "lilygo": "Aurora — LilyGo T5 S3 Pro Lite (no LoRa/GPS)",
+    "lilygo-pro": "Aurora — LilyGo T5 S3 Pro (LoRa/GPS fitted)",
+    "x4pro": "Aurora — Xteink X4 Pro",
+    "x4": "Aurora — Xteink X4 / X3",
 }
 PARTS = [("bootloader.bin", 0x0), ("partitions.bin", 0x8000), ("boot_app0.bin", 0xE000), ("firmware.bin", 0x10000)]
 
@@ -80,7 +91,7 @@ def main() -> int:
             shutil.copy2(src, dest / name)
             parts.append({"path": f"firmware/{board}/{name}", "offset": offset})
         manifest = {
-            "name": f"Aurora ({board})",
+            "name": NAMES.get(board, f"Aurora ({board})"),
             "version": ver,
             "new_install_prompt_erase": True,
             "builds": [{"chipFamily": chip, "parts": parts}],

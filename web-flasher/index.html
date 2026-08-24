@@ -45,11 +45,35 @@
     <p>Web flashing needs Web Serial: use Chrome or Edge on a desktop (Windows, macOS, Linux, ChromeOS). Safari and Firefox don't support it.</p>
   </div>
 
+  <div class="card warn">
+    <h2>LilyGo T5 S3 comes in two variants — pick the right one</h2>
+    <p>The <strong>Pro</strong> and the <strong>Pro Lite</strong> are the same board, except the Lite ships without
+       the LoRa/GPS module. Aurora gives the Lite's four unused radio pins to you as solderable keys, which is
+       exactly the wrong thing to do on a board that has a radio wired to them.</p>
+    <p><strong>Look at the back of the board:</strong> a metal-canned module with u.FL antenna sockets next to the
+       battery connector means <em>Pro</em>. Bare pads there mean <em>Pro Lite</em>. If you never bought the version
+       with an antenna, you have the Lite.</p>
+    <p>Nothing here is destructive if you guess wrong — flash the other one and you are back. But a Pro running the
+       Lite build can see phantom key presses from the radio's pins, and updates from the device itself only ever
+       offer the build matching what you flashed.</p>
+  </div>
+
   <div class="card">
-    <h2>LilyGo T5 S3 (4.7" touch)</h2>
-    <p>ESP32-S3. Plug in over USB-C, then click Install. If the port doesn't show up, hold <code>BOOT</code> while pressing <code>RST</code> and try again.</p>
+    <h2>LilyGo T5 S3 Pro Lite (4.7" touch)</h2>
+    <p>ESP32-S3, no radio fitted. Four extra keys can be soldered to the spare GPIO10 / GPIO1 / GPIO46 / GPIO47 pads
+       and bound in Settings → Controls → Key actions. Plug in over USB-C, then click Install. If the port doesn't
+       show up, hold <code>BOOT</code> while pressing <code>RST</code> and try again.</p>
     <div class="row">
       <esp-web-install-button manifest="manifest-lilygo.json"></esp-web-install-button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>LilyGo T5 S3 Pro (4.7" touch, LoRa/GPS)</h2>
+    <p>The same firmware, built to leave the radio's four pins alone: no solderable extra keys, and the module's
+       pins stay parked as the board expects. Everything else — panel, touch, IO48, frontlight — is identical.</p>
+    <div class="row">
+      <esp-web-install-button manifest="manifest-lilygo-pro.json"></esp-web-install-button>
     </div>
   </div>
 
@@ -74,7 +98,8 @@
     <ol>
       <li>Installing keeps your books and settings: only the bootloader, partition table and the app are written — the SD card is untouched.</li>
       <li>Pick <em>Erase device</em> in the dialog only if you want a clean NVS (Wi-Fi credentials, saved state).</li>
-      <li>Later updates can be installed from the device itself: Settings → System → Update (the fork's releases).</li>
+      <li>Later updates can be installed from the device itself: Settings → System → Update (the fork's releases).
+          Each build is tagged with the board it was made for, so a device only ever offers itself the matching one.</li>
     </ol>
   </div>
 
