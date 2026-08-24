@@ -621,6 +621,14 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                          }),
           v.end());
 #endif
+  // Side-button layout swaps which of the two side keys pages forward. A board
+  // with neither (the T5 S3 pages from the expander key and the glass, and that
+  // key is masked out of the normal queries) has nothing for it to swap.
+  if (BoardConfig::ACTIVE.input.up < 0 && BoardConfig::ACTIVE.input.down < 0) {
+    v.erase(
+        std::remove_if(v.begin(), v.end(), [](const SettingInfo& s) { return s.nameId == StrId::STR_SIDE_BTN_LAYOUT; }),
+        v.end());
+  }
   // "Long-press Menu" is the front Confirm button's hold action; the Home key's
   // hold has its own row. Boards with no Confirm button never show it.
   if (BoardConfig::ACTIVE.input.confirm < 0) {

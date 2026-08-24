@@ -168,17 +168,82 @@ void SettingsActivity::selectCategory(const int categoryIndex) {
 // Structural — call only when the active category or a category's setting
 // list changes, never from buildScreen(), which only refreshes rowValues_
 // content and rowItems_[].value pointers in place.
+// Which section a Controls row belongs to. Anything else (and every other
+// category) returns STR_NONE_OPT and stays header-less: the split earns its
+// keep on the one category long enough to need it.
+static StrId settingSection(const SettingInfo& s) {
+  if (s.category != StrId::STR_CAT_CONTROLS) return StrId::STR_NONE_OPT;
+  switch (s.nameId) {
+    case StrId::STR_TOUCH_READER_CONTROLS:
+    case StrId::STR_TAP_FOR_READER_MENU:
+    case StrId::STR_TILT_PAGE_TURN:
+      return StrId::STR_SEC_TOUCH;
+    case StrId::STR_SIDE_BTN_LAYOUT:
+    case StrId::STR_FRONT_BTN_FOLLOW_ORIENTATION:
+    case StrId::STR_SHOW_BUTTON_HINTS:
+    case StrId::STR_LONG_PRESS_BEHAVIOR:
+    case StrId::STR_LONG_PRESS_MENU:
+    case StrId::STR_BACK_SHORT_TO_FILE_BROWSER:
+    case StrId::STR_PWR_BTN_FOOTNOTE_BACK:
+      return StrId::STR_SEC_BUTTONS;
+    default:
+      // The per-key tap/hold pickers, which is everything else in Controls.
+      return StrId::STR_SEC_KEY_ACTIONS;
+  }
+}
+
 void SettingsActivity::rebuildRowItems() {
   const auto& settings = *currentSettings;
   rowValues_.assign(settings.size(), std::string());
   rowItems_.clear();
-  rowItems_.reserve(settings.size());
+  rowSetting_.clear();
+  rowItems_.reserve(settings.size() + 3);
+  rowSetting_.reserve(settings.size() + 3);
+  StrId section = StrId::STR_NONE_OPT;
   for (size_t i = 0; i < settings.size(); i++) {
+    const StrId want = settingSection(settings[i]);
+    if (want != StrId::STR_NONE_OPT && want != section) {
+      section = want;
+      fui::ListItem header;
+      header.isHeader = true;
+      header.label = I18N.get(want);
+      rowItems_.push_back(header);
+      rowSetting_.push_back(-1);
+    }
     fui::ListItem item;
     item.label = I18N.get(settings[i].nameId);
-    item.actionValue = static_cast<int16_t>(i);
+    item.actionValue = static_cast<int16_t>(rowItems_.size());
     rowItems_.push_back(item);
+    rowSetting_.push_back(static_cast<int16_t>(i));
   }
+}
+
+// ring 0 is the tab band; rows start at 1.
+const SettingInfo* SettingsActivity::settingAtRing(const int ring) const {
+  const int row = ring - 1;
+  if (row < 0 || row >= static_cast<int>(rowSetting_.size())) return nullptr;
+  const int16_t index = rowSetting_[row];
+  if (index < 0 || index >= static_cast<int>(currentSettings->size())) return nullptr;
+  return &(*currentSettings)[index];
+}
+
+// Headers are rows the list draws but never dispatches, so button navigation
+// has to hop over them; a tap cannot land on one in the first place.
+void SettingsActivity::navigateButtons() {
+  const int ringSize = listCount() + 1;
+  const auto step = [this, ringSize](int direction) {
+    int ring = ringPos();
+    for (int guard = 0; guard < ringSize; ++guard) {
+      ring =
+          direction > 0 ? ButtonNavigator::nextIndex(ring, ringSize) : ButtonNavigator::previousIndex(ring, ringSize);
+      if (ring == 0 || settingAtRing(ring) != nullptr) break;  // 0 = the tab band
+    }
+    moveRingTo(ring);
+  };
+  buttonNavigator.onNextRelease([step] { step(1); });
+  buttonNavigator.onPreviousRelease([step] { step(-1); });
+  buttonNavigator.onNextContinuous([this] { stepTab(1); });
+  buttonNavigator.onPreviousContinuous([this] { stepTab(-1); });
 }
 
 void SettingsActivity::onTabAction(const int index) {
@@ -562,12 +627,10 @@ bool SettingsActivity::handleButtons() {
 }
 
 void SettingsActivity::toggleCurrentSetting() {
-  int selectedSetting = ringPos() - 1;
-  if (selectedSetting < 0 || selectedSetting >= settingsCount) {
-    return;
-  }
-  activateSetting((*currentSettings)[selectedSetting]);
-  activeNav().selected = std::min(ringPos(), settingsCount);
+  const SettingInfo* setting = settingAtRing(ringPos());
+  if (setting == nullptr) return;  // the tab band, or a section header
+  activateSetting(*setting);
+  activeNav().selected = std::min(ringPos(), listCount());
 }
 
 // Toggle/cycle/open one settings row. Shared by the category-tab presentation
@@ -806,9 +869,11 @@ void SettingsActivity::buildScreen(UiScreen& screen) {
   // vector growth) rather than building a new items/values vector on every
   // render.
   const auto& settings = *currentSettings;
-  for (size_t i = 0; i < settings.size(); i++) {
-    rowValues_[i] = settingValueText(settings[i]);
-    rowItems_[i].value = rowValues_[i].empty() ? nullptr : rowValues_[i].c_str();
+  for (size_t row = 0; row < rowItems_.size(); row++) {
+    const int16_t index = rowSetting_[row];
+    if (index < 0) continue;  // section header: no value column
+    rowValues_[index] = settingValueText(settings[index]);
+    rowItems_[row].value = rowValues_[index].empty() ? nullptr : rowValues_[index].c_str();
   }
 
   fui::ListProps props;

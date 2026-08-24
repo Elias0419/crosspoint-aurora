@@ -178,6 +178,12 @@ class SettingsActivity final : public UiTabListActivity {
 
   int selectedCategoryIndex = 0;  // Currently selected category
   int settingsCount = 0;
+  // Row -> index into *currentSettings, or -1 for a section header. The tab
+  // list shows headers inside the category (Controls is long enough that one
+  // undivided run is hard to scan), so rows and settings are no longer 1:1.
+  std::vector<int16_t> rowSetting_;
+  // The setting a ring position points at, or nullptr on a header / the tab band.
+  const SettingInfo* settingAtRing(int ring) const;
 
   // Per-category settings derived from shared list + device-only actions
   std::vector<SettingInfo> displaySettings;
@@ -205,13 +211,15 @@ class SettingsActivity final : public UiTabListActivity {
   static const StrId categoryNames[categoryCount];
 
   // --- UiTabListActivity contract ---
-  int listCount() const override { return settingsCount; }
+  int listCount() const override { return static_cast<int>(rowSetting_.size()); }
   int tabCount() const override { return categoryCount; }
   int activeTab() const override { return selectedCategoryIndex; }
   const char* tabLabel(int index) const override { return I18N.get(categoryNames[index]); }
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;
   void onTabAction(int index) override;
+  // Steps over section headers, which are rows but not settings.
+  void navigateButtons() override;
   void stepTab(int direction) override;
   bool handleButtons() override;
   bool handleCustomInput() override;
