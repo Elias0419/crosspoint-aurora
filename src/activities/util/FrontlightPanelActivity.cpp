@@ -17,6 +17,7 @@
 #include "components/UIThemeTokens.h"
 #include "components/icons/customListIcons.h"
 #include "components/icons/listIcons.h"
+#include "util/ScreenOrientation.h"
 
 namespace fui = freeink::ui;
 
@@ -180,20 +181,31 @@ void FrontlightPanelActivity::runTile(const int idx) {
       renderer.promoteNextRefresh(HalDisplay::FULL_REFRESH);
       close();
       break;
-    case 2:  // Cycle the reading orientation
-      SETTINGS.orientation = static_cast<uint8_t>((SETTINGS.orientation + 1) % 4);
-      SETTINGS.saveToFile();
-      // Nothing else would turn the renderer: ActivityManager::Pop restores the
-      // activity underneath without calling onEnter(), so its
-      // applyInitialOrientation() never runs. Apply it here instead.
-      ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
-      // Close rather than redraw in place: the turned panel lays out against
-      // the new frame while the old panel's pixels sit in the old frame, so
-      // repeated taps stacked stale panels on screen. The screen underneath
-      // repaints in the new orientation and its refresh carries the cleanup a
-      // whole-frame rewrite needs.
-      renderer.promoteNextRefresh(HalDisplay::FULL_REFRESH);
-      close();
+    case 2:  // Screen orientation: ask, then turn once
+      orientationPopup.show(StrId::STR_ORIENTATION, SCREEN_ORIENTATION_NAMES,
+                            static_cast<int>(CrossPointSettings::ORIENTATION_COUNT),
+                            SETTINGS.orientation % CrossPointSettings::ORIENTATION_COUNT, [this](const int idx) {
+                              if (idx == SETTINGS.orientation) {
+                                close();
+                                return;
+                              }
+                              SETTINGS.orientation = static_cast<uint8_t>(idx);
+                              SETTINGS.saveToFile();
+                              // Nothing else would turn the renderer:
+                              // ActivityManager::Pop restores the activity
+                              // underneath without calling onEnter(), so its
+                              // applyInitialOrientation() never runs.
+                              applyScreenOrientation(renderer);
+                              // Close rather than redraw in place: a turned
+                              // panel lays out against the new frame while the
+                              // old panel's pixels sit in the old one. The
+                              // screen underneath repaints the new way up, and
+                              // its refresh carries the cleanup a whole-frame
+                              // rewrite needs.
+                              renderer.promoteNextRefresh(HalDisplay::FULL_REFRESH);
+                              close();
+                            });
+      requestUpdate();
       break;
     case 3:  // Touch reader controls (for reading with the palm on the glass)
       // Toggles the existing Settings -> Controls option, nothing lower-level:
@@ -265,6 +277,8 @@ bool FrontlightPanelActivity::handleHomeGesture() {
 }
 
 void FrontlightPanelActivity::loop() {
+  if (orientationPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
+
   const auto touch = routeTouch(mappedInput, false, /*routeHeld=*/true);
   if (touch.routed) {
     if (app.invalidated()) requestUpdate();
@@ -404,11 +418,10 @@ void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
   int ids[kTileCount];
   const int tileCount = visibleTiles(mappedInput, ids);
   if (tileCount > 0) {
-    static constexpr StrId kOrientNames[4] = {StrId::STR_PORTRAIT, StrId::STR_LANDSCAPE_CW,
-                                              StrId::STR_ORIENTATION_INVERTED, StrId::STR_LANDSCAPE_CCW};
     // The orientation tile is labelled with just the current mode ("Portrait"):
     // the mode names say what the tile is about on their own.
-    const char* orientLabel = I18N.get(kOrientNames[SETTINGS.orientation % 4]);
+    const char* orientLabel =
+        I18N.get(SCREEN_ORIENTATION_NAMES[SETTINGS.orientation % CrossPointSettings::ORIENTATION_COUNT]);
     // "Touch On" / "Touch Off", from the existing state strings: the label
     // names the current state of the touch-reader-controls setting.
     const bool touchOn = SETTINGS.touchReaderControls != CrossPointSettings::TOUCH_READER_OFF;
@@ -440,6 +453,10 @@ void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
 }
 
 void FrontlightPanelActivity::render(RenderLock&&) {
+  // The picker draws itself over the panel; only once it closes does the panel
+  // underneath need painting again.
+  if (orientationPopup.processRender(renderer, mappedInput)) return;
+
   panelBottom = computePanelBottom();
 
   // fui::sheet draws the card body, its bottom rule, and the grabber during

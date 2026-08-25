@@ -2,13 +2,13 @@
 
 #include <CrossPointSettings.h>
 #include <GfxRenderer.h>
-#include <Memory.h>
-
-#include <cstring>
 #include <HalGPIO.h>
 #include <HalTiltSensor.h>
 #include <Logging.h>
+#include <Memory.h>
 #include <components/bars/tap-zones.h>
+
+#include <cstring>
 
 #include "MappedInputManager.h"
 #include "activities/ActivityManager.h"
@@ -25,25 +25,6 @@ enum ReaderTouchAction : freeink::ui::ActionId {
   READER_TOUCH_PREV = 1,
   READER_TOUCH_NEXT = 3,
 };
-
-inline void applyOrientation(GfxRenderer& renderer, const uint8_t orientation) {
-  switch (orientation) {
-    case CrossPointSettings::ORIENTATION::PORTRAIT:
-      renderer.setOrientation(GfxRenderer::Orientation::Portrait);
-      break;
-    case CrossPointSettings::ORIENTATION::LANDSCAPE_CW:
-      renderer.setOrientation(GfxRenderer::Orientation::LandscapeClockwise);
-      break;
-    case CrossPointSettings::ORIENTATION::INVERTED:
-      renderer.setOrientation(GfxRenderer::Orientation::PortraitInverted);
-      break;
-    case CrossPointSettings::ORIENTATION::LANDSCAPE_CCW:
-      renderer.setOrientation(GfxRenderer::Orientation::LandscapeCounterClockwise);
-      break;
-    default:
-      break;
-  }
-}
 
 struct PageTurnResult {
   bool prev;

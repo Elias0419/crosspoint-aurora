@@ -279,6 +279,12 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
 
     std::vector<SettingInfo> v = {
         // --- Display ---
+        // Which way up the whole UI is drawn, not just the book: it moved out
+        // of Reader when it stopped being the reader's own setting.
+        SettingInfo::Enum(
+            StrId::STR_ORIENTATION, &CrossPointSettings::orientation,
+            {StrId::STR_PORTRAIT, StrId::STR_LANDSCAPE_CW, StrId::STR_ORIENTATION_INVERTED, StrId::STR_LANDSCAPE_CCW},
+            "orientation", StrId::STR_CAT_DISPLAY),
         SettingInfo::Enum(StrId::STR_SLEEP_SCREEN, &CrossPointSettings::sleepScreen, std::move(sleepScreenValues),
                           "sleepScreen", StrId::STR_CAT_DISPLAY),
         SettingInfo::Enum(StrId::STR_SLEEP_COVER_MODE, &CrossPointSettings::sleepScreenCoverMode,
@@ -361,10 +367,6 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         SettingInfo::Toggle(StrId::STR_HYPHENATION, &CrossPointSettings::hyphenationEnabled, "hyphenationEnabled",
                             StrId::STR_CAT_READER)
             .withTextSettings(),
-        SettingInfo::Enum(
-            StrId::STR_ORIENTATION, &CrossPointSettings::orientation,
-            {StrId::STR_PORTRAIT, StrId::STR_LANDSCAPE_CW, StrId::STR_ORIENTATION_INVERTED, StrId::STR_LANDSCAPE_CCW},
-            "orientation", StrId::STR_CAT_READER),
         SettingInfo::Toggle(StrId::STR_EXTRA_SPACING, &CrossPointSettings::extraParagraphSpacing,
                             "extraParagraphSpacing", StrId::STR_CAT_READER)
             .withTextSettings(),

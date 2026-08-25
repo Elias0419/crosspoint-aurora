@@ -58,6 +58,9 @@ bool XtcReaderActivity::handleFormatInput() {
   return false;
 }
 
+// The one activity that overrides the screen orientation: XTC pages are
+// pre-rasterised portrait images, so a rotated screen would show them sideways
+// with nothing to re-lay-out. ReaderActivity::onExit() puts the screen back.
 void XtcReaderActivity::applyInitialOrientation() { renderer.setOrientation(GfxRenderer::Orientation::Portrait); }
 
 void XtcReaderActivity::renderBook() {

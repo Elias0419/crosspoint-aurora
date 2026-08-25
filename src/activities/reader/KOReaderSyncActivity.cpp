@@ -24,6 +24,7 @@
 #include "components/UITheme.h"
 #include "components/UiAppHelpers.h"  // list icons for the compare rows
 #include "fontIds.h"
+#include "util/ScreenOrientation.h"
 
 namespace fui = freeink::ui;
 
@@ -424,7 +425,7 @@ void KOReaderSyncActivity::performUpload() {
 
 void KOReaderSyncActivity::onEnter() {
   Activity::onEnter();
-  ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
+  applyScreenOrientation(renderer);
 
   resetUi();
   app.on(ACTION_ROW, &KOReaderSyncActivity::onResultRow, this);

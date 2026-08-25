@@ -8,6 +8,7 @@
 #include "MappedInputManager.h"
 #include "ReaderUtils.h"
 #include "components/UITheme.h"
+#include "util/ScreenOrientation.h"
 
 namespace fui = freeink::ui;
 
@@ -94,7 +95,7 @@ void EpubReaderMenuActivity::activateIndex(const int index) {
                        // Rotate the menu immediately. Only the renderer turns;
                        // SETTINGS.orientation stays unchanged so the reader's
                        // result handler still detects the change and reflows.
-                       ReaderUtils::applyOrientation(renderer, pendingOrientation);
+                       applyScreenOrientation(renderer, pendingOrientation);
                        app.setDevice(uiTarget.deviceContext());  // hit rects follow the new frame
                        requestUpdate(true);
                      });

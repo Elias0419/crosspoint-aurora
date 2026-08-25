@@ -46,6 +46,7 @@
 #include "fontIds.h"
 #include "util/BookmarkUtil.h"
 #include "util/ButtonNavigator.h"
+#include "util/ScreenOrientation.h"
 #include "util/ScreenshotUtil.h"
 
 namespace {
@@ -946,7 +947,7 @@ void EpubReaderActivity::applyOrientation(const uint8_t orientation) {
     SETTINGS.orientation = orientation;
     SETTINGS.saveToFile();
   }
-  ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
+  applyScreenOrientation(renderer);
   appliedOrientation = orientation;
   section.reset();
 }
@@ -2426,13 +2427,10 @@ std::string EpubReaderActivity::moreRowName(int row) const {
 
 std::string EpubReaderActivity::moreRowValue(int row) const {
   using MA = EpubReaderMenuActivity::MenuAction;
-  static constexpr StrId kOrient[] = {StrId::STR_PORTRAIT, StrId::STR_LANDSCAPE_CW, StrId::STR_ORIENTATION_INVERTED,
-                                      StrId::STR_LANDSCAPE_CCW};
-  static_assert(std::size(kOrient) == CrossPointSettings::ORIENTATION_COUNT, "orientation labels");
   if (row < 0 || row >= static_cast<int>(moreActions.size())) return "";
   switch (moreActions[row]) {
     case MA::ROTATE_SCREEN:
-      return I18N.get(kOrient[SETTINGS.orientation % CrossPointSettings::ORIENTATION_COUNT]);
+      return I18N.get(SCREEN_ORIENTATION_NAMES[SETTINGS.orientation % CrossPointSettings::ORIENTATION_COUNT]);
     case MA::AUTO_PAGE_TURN:
       return (autoTurnOption == 0 || autoTurnOption >= static_cast<int>(std::size(PAGE_TURN_RATES)))
                  ? std::string(tr(STR_STATE_OFF))
@@ -2453,10 +2451,8 @@ void EpubReaderActivity::activateMoreRow(int row) {
   // In-place toggles keep the panel open and re-render the page beneath it.
   switch (action) {
     case MA::ROTATE_SCREEN: {
-      static constexpr StrId kOrientIds[] = {StrId::STR_PORTRAIT, StrId::STR_LANDSCAPE_CW,
-                                             StrId::STR_ORIENTATION_INVERTED, StrId::STR_LANDSCAPE_CCW};
-      static_assert(std::size(kOrientIds) == CrossPointSettings::ORIENTATION_COUNT, "orientation options");
-      overlayPopup.show(StrId::STR_ORIENTATION, kOrientIds, static_cast<int>(std::size(kOrientIds)),
+      overlayPopup.show(StrId::STR_ORIENTATION, SCREEN_ORIENTATION_NAMES,
+                        static_cast<int>(CrossPointSettings::ORIENTATION_COUNT),
                         SETTINGS.orientation % CrossPointSettings::ORIENTATION_COUNT, [this](int idx) {
                           if (idx == SETTINGS.orientation) return;
                           applyOrientation(static_cast<uint8_t>(idx));

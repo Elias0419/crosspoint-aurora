@@ -35,6 +35,7 @@
 #include "components/UIThemeTokens.h"
 #include "components/UiAppHelpers.h"
 #include "fontIds.h"
+#include "util/ScreenOrientation.h"
 
 namespace fui = freeink::ui;
 
@@ -286,6 +287,17 @@ void SettingsActivity::onExit() {
 }
 
 void SettingsActivity::applyUiSettingChange(uint8_t CrossPointSettings::* valuePtr) {
+  if (valuePtr == &CrossPointSettings::orientation) {
+    // Turn the screen under the user's finger: this row is the screen's
+    // orientation, so the settings list itself is drawn the new way up. The
+    // whole frame changes shape, so it needs re-driving rather than a fast
+    // partial update, and the interaction table has to be rebuilt against the
+    // new layout before a tap can be routed again.
+    applyScreenOrientation(renderer);
+    renderer.promoteNextRefresh(HalDisplay::FULL_REFRESH);
+    resetUi();
+    return;
+  }
   // Theme changes take effect immediately, on this screen — reload the theme
   // and re-derive the app's tokens so the very next repaint is in the new look.
   if (valuePtr != &CrossPointSettings::uiTheme) {

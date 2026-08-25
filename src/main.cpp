@@ -49,6 +49,7 @@
 #include "fontIds.h"
 #include "images/LoadingIcon.h"
 #include "util/ButtonNavigator.h"
+#include "util/ScreenOrientation.h"
 #include "util/ScreenshotUtil.h"
 
 GfxRenderer renderer(display);
@@ -592,6 +593,10 @@ void setupDisplayAndFonts(bool seamless = false) {
 
   display.begin(seamless);
   renderer.begin();
+  // Before the first frame: the screen orientation is a device setting, so a
+  // device put down sideways comes back sideways from a reset or a deep sleep
+  // rather than snapping to portrait until something turns it again.
+  applyScreenOrientation(renderer);
   activityManager.begin();
   LOG_DBG("MAIN", "Display initialized");
 

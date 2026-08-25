@@ -15,6 +15,7 @@
 #include "SdCardFontSystem.h"
 #include "TxtReaderActivity.h"
 #include "XtcReaderActivity.h"
+#include "util/ScreenOrientation.h"
 
 ReaderActivity::ReaderActivity(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput,
                                std::string bookPath, const bool allowFastInitialRefresh)
@@ -43,7 +44,7 @@ std::unique_ptr<ReaderActivity> ReaderActivity::create(GfxRenderer& renderer, Ma
   return activity;
 }
 
-void ReaderActivity::applyInitialOrientation() { ReaderUtils::applyOrientation(renderer, SETTINGS.orientation); }
+void ReaderActivity::applyInitialOrientation() { applyScreenOrientation(renderer); }
 
 void ReaderActivity::disableFastInitialRefresh() { pagesUntilFullRefresh = 0; }
 
@@ -73,7 +74,9 @@ void ReaderActivity::onEnter() {
 void ReaderActivity::onExit() {
   Activity::onExit();
 
-  renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+  // Back to the screen's orientation, not to portrait: the reader is one
+  // activity on a rotated screen, not the only thing allowed to rotate.
+  applyScreenOrientation(renderer);
   APP_STATE.readerActivityLoadCount = 0;
   APP_STATE.saveToFile();
 

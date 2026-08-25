@@ -2,6 +2,7 @@
 
 #include "CrossPointSettings.h"
 #include "activities/Activity.h"
+#include "components/OptionPopup.h"
 #include "components/UiAppHost.h"
 #include "util/ButtonNavigator.h"
 
@@ -9,7 +10,7 @@
 // or a button bound to "Control Center" (iOS Control Center style): a grabber,
 // the frontlight brightness/warmth sliders (on boards with a light), and a grid
 // of quick-setting tiles — night mode, ghost-cleanup refresh, reading
-// orientation, reader touch controls on/off, a screenshot, and sleep, each of
+// screen orientation, reader touch controls on/off, a screenshot, and sleep, each of
 // which the user can hide (Settings -> Display -> Customise Control Center). The
 // frontlight controls are always there: they are what the panel is for. Pure
 // 1-bit: no dithered fills, selection reads as a filled tile. The grabber sits
@@ -81,6 +82,11 @@ class FrontlightPanelActivity final : public Activity, private UiAppHost {
   // not use this — it closes the panel and promotes the repaint underneath
   // instead (GfxRenderer::promoteNextRefresh).
   bool cleanRefreshPending = false;
+
+  // The orientation tile asks which way up, rather than stepping one quarter
+  // turn per tap: four orientations means up to three taps to reach the one you
+  // want, each of them a full-screen rewrite you then have to look at sideways.
+  OptionPopup orientationPopup;
 
  public:
   explicit FrontlightPanelActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
