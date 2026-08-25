@@ -32,6 +32,28 @@ git -C freeink-sdk fetch origin && git -C freeink-sdk merge origin/main
 git -C freeink-sdk push fork aurora && git add freeink-sdk
 ```
 
+**When a conflict appears.** Nothing is lost and nothing is pushed yet:
+`git merge --abort` puts the tree back exactly as it was, and the
+`aurora-premerge-*` branch is there if the merge is already committed. Work
+through it file by file — `git diff --diff-filter=U --name-only` lists them —
+and decide each hunk by *why* the two sides differ:
+
+| The two sides | Take |
+|---|---|
+| Same code, different comment | The fuller comment |
+| Aurora diverged on purpose (control center, no GPIO2 latch, drop-cap context) | Aurora's |
+| Upstream generalised a feature aurora had first | Upstream's — then delete aurora's twin and repoint its references |
+| Both changed the same code for different reasons | Neither: merge by hand, upstream's structure carrying aurora's behaviour |
+
+The last row is the one that needs reading rather than picking. Example from the
+2026-08-25 sync: upstream added `g_lastBaseEpdMode` so the grayscale overlay is
+pushed with the base frame's mode, while aurora added the two-level waveform's
+`flashCanvas()`. The resolution keeps both, not either.
+
+Then, before committing: `grep -rn '<<<<<<<' src lib` for leftover markers, and
+**build** — the compiler catches what the merge could not see, such as a StrId
+that upstream renamed out from under aurora's code.
+
 Conflicts that recur, and how they go:
 - **Control center** — keep aurora's six-tile customisable version; upstream ships a
   fixed four-tile one (`FrontlightPanelActivity`, `ccTile*` settings).
