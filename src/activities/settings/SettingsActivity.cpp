@@ -182,7 +182,7 @@ static StrId settingSection(const SettingInfo& s) {
   if (s.category != StrId::STR_CAT_CONTROLS) return StrId::STR_NONE_OPT;
   switch (s.nameId) {
     case StrId::STR_TOUCH_READER_CONTROLS:
-    case StrId::STR_TAP_FOR_READER_MENU:
+    case StrId::STR_SHOW_READER_MENU:
     case StrId::STR_TILT_PAGE_TURN:
       return StrId::STR_SEC_TOUCH;
     case StrId::STR_SIDE_BTN_LAYOUT:
@@ -512,7 +512,7 @@ void SettingsActivity::buildAuroraEntries() {
 
     std::vector<StrId> placedControls;
     addGroupFrom(controlsSettings, StrId::STR_SEC_TOUCH,
-                 {StrId::STR_TOUCH_READER_CONTROLS, StrId::STR_TAP_FOR_READER_MENU, StrId::STR_TILT_PAGE_TURN},
+                 {StrId::STR_TOUCH_READER_CONTROLS, StrId::STR_SHOW_READER_MENU, StrId::STR_TILT_PAGE_TURN},
                  placedControls);
     addGroupFrom(controlsSettings, StrId::STR_SEC_BUTTONS,
                  {StrId::STR_SIDE_BTN_LAYOUT, StrId::STR_FRONT_BTN_FOLLOW_ORIENTATION, StrId::STR_SHOW_BUTTON_HINTS,

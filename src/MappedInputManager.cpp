@@ -290,6 +290,8 @@ bool MappedInputManager::wasHomeKeyAction(const uint8_t function) const {
   return gpio.hasHomeKey() && SETTINGS.homeKeyShortAction == function && gpio.wasHomeKeyTapped();
 }
 
+bool MappedInputManager::wasReaderMenuSwipeUp() const { return gpio.hasHomeKey() && wasBottomEdgeUpSwipe(); }
+
 bool MappedInputManager::wasHomeGesture() const {
   // The bottom-edge-up swipe stays a universal Home path on touch boards: the
   // key defaults to Back, and Home must remain reachable without it.

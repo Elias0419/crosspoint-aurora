@@ -85,10 +85,10 @@ void ActivityManager::loop() {
       return;
     }
 
-    // Tap-first control-center entry: a tap on the status-bar band of the four
-    // top-level tab screens opens it, mirroring the top-edge swipe (which is
-    // unreliable on the T5S3's etched glass). The reader keeps its clean page
-    // (no status bar there to tap).
+    // Tap-first control-center entry: a tap on the status-bar band of the
+    // top-level tab screens opens it, mirroring the top-edge swipe (which some
+    // panels' etched glass makes unreliable). The reader keeps its clean page
+    // (no status bar there to tap). Touch boards only, like the swipe itself.
     bool statusBarTap = false;
     if (mappedInput.hasTouch() &&
         (currentActivity->name == "Home" || currentActivity->name == "FileBrowser" ||
