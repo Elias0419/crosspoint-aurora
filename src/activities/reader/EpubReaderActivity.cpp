@@ -472,31 +472,27 @@ void EpubReaderActivity::loop() {
     return;
   }
 
+  const unsigned long confirmHoldMs = confirmLongPressThreshold();
+  const bool confirmLongPressed =
+      confirmHoldMs != 0 && mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, confirmHoldMs);
   const bool confirmReleased = mappedInput.wasReleased(MappedInputManager::Button::Confirm);
-  if (confirmReleased) {
+  if (confirmLongPressed) {
     switch (SETTINGS.longPressMenuFunction) {
       case CrossPointSettings::LP_MENU_BOOKMARK:
-        if (mappedInput.getHeldTime() >= ReaderUtils::BOOKMARK_HOLD_MS) {
-          addBookmark();
-          showBookmarkMessage = true;
-          bookmarkMessageTime = millis();
-          requestUpdate();
-          return;
-        }
+        addBookmark();
+        showBookmarkMessage = true;
+        bookmarkMessageTime = millis();
+        requestUpdate();
         break;
       case CrossPointSettings::LP_MENU_KOSYNC:
-        if (mappedInput.getHeldTime() >= ReaderUtils::GO_HOME_MS && launchKOReaderSync()) return;
-        break;
-      case CrossPointSettings::LP_MENU_DICTIONARY:
-        if (mappedInput.getHeldTime() >= ReaderUtils::BOOKMARK_HOLD_MS) {
-          openDictionaryWordSelect();
+        if (launchKOReaderSync()) {
           return;
         }
         break;
+      case CrossPointSettings::LP_MENU_DICTIONARY:
+        openDictionaryWordSelect();
+        return;
       case CrossPointSettings::LP_MENU_READER_MENU:
-        // Confirm already opens the menu on release. This option exists for
-        // boards whose capacitive Home key supplies the long-press action.
-        break;
       case CrossPointSettings::LP_MENU_DISABLED:
       default:
         break;
@@ -582,14 +578,13 @@ void EpubReaderActivity::loop() {
     return;
   }
 
-  const unsigned long heldMs = (touch.prev || touch.next) ? touch.heldMs : mappedInput.getHeldTime();
-  const bool longPress = !fromTilt && heldMs > ReaderUtils::SKIP_HOLD_MS;
-
   if (mappedInput.wasReleased(MappedInputManager::Button::Power) &&
       mappedInput.wasReleased(MappedInputManager::Button::Down)) {
     return;
   }
 
+  const unsigned long heldMs = (touch.prev || touch.next) ? touch.heldMs : mappedInput.getHeldTime();
+  const bool longPress = !fromTilt && heldMs >= ReaderUtils::SKIP_HOLD_MS;
   if (longPress && SETTINGS.longPressButtonBehavior == SETTINGS.CHAPTER_SKIP) {
     skipPages(nextTriggered ? 1 : -1);
     requestUpdate();
@@ -875,6 +870,20 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       addBookmark();
       break;
     }
+  }
+}
+
+unsigned long EpubReaderActivity::confirmLongPressThreshold() const {
+  switch (SETTINGS.longPressMenuFunction) {
+    case CrossPointSettings::LP_MENU_BOOKMARK:
+    case CrossPointSettings::LP_MENU_DICTIONARY:
+      return ReaderUtils::BOOKMARK_HOLD_MS;
+    case CrossPointSettings::LP_MENU_KOSYNC:
+      return KOREADER_STORE.hasCredentials() ? ReaderUtils::GO_HOME_MS : 0;
+    case CrossPointSettings::LP_MENU_READER_MENU:
+    case CrossPointSettings::LP_MENU_DISABLED:
+    default:
+      return 0;
   }
 }
 
@@ -1776,10 +1785,15 @@ void EpubReaderActivity::renderStatusBar() const {
 // Toolbar reader menu
 // ---------------------------------------------------------------------------
 
-namespace {}  // namespace
-
 namespace {
-constexpr int kTextRowCount = 5;
+constexpr StrId kTextRowNames[] = {StrId::STR_FONT, StrId::STR_FONT_SIZE, StrId::STR_LINE_SPACING,
+                                   StrId::STR_PARA_ALIGNMENT, StrId::STR_FOCUS_READING};
+constexpr StrId kSpacingIds[] = {StrId::STR_TIGHT, StrId::STR_NORMAL, StrId::STR_WIDE, StrId::STR_EXTRA_WIDE};
+constexpr StrId kAlignIds[] = {StrId::STR_JUSTIFY, StrId::STR_ALIGN_LEFT, StrId::STR_CENTER, StrId::STR_ALIGN_RIGHT,
+                               StrId::STR_BOOK_S_STYLE};
+constexpr int kTextRowCount = static_cast<int>(std::size(kTextRowNames));
+static_assert(std::size(kSpacingIds) == CrossPointSettings::LINE_COMPRESSION_COUNT, "line spacing labels");
+static_assert(std::size(kAlignIds) == CrossPointSettings::PARAGRAPH_ALIGNMENT_COUNT, "alignment labels");
 }  // namespace
 
 bool EpubReaderActivity::usesToolbarMenu() const {
@@ -1798,29 +1812,11 @@ std::string EpubReaderActivity::currentChapterTitle() const {
 }
 
 std::string EpubReaderActivity::textRowName(int row) const {
-  switch (row) {
-    case 0:
-      return tr(STR_FONT);
-    case 1:
-      return tr(STR_FONT_SIZE);
-    case 2:
-      return tr(STR_LINE_SPACING);
-    case 3:
-      return tr(STR_PARA_ALIGNMENT);
-    case 4:
-      return tr(STR_FOCUS_READING);
-    default:
-      return "";
-  }
+  return row >= 0 && row < kTextRowCount ? I18N.get(kTextRowNames[row]) : "";
 }
 
 std::string EpubReaderActivity::textRowValue(int row) const {
   static constexpr StrId kFamily[] = {StrId::STR_NOTO_SERIF, StrId::STR_NOTO_SANS};
-  static constexpr StrId kSpacing[] = {StrId::STR_TIGHT, StrId::STR_NORMAL, StrId::STR_WIDE, StrId::STR_EXTRA_WIDE};
-  static constexpr StrId kAlign[] = {StrId::STR_JUSTIFY, StrId::STR_ALIGN_LEFT, StrId::STR_CENTER,
-                                     StrId::STR_ALIGN_RIGHT, StrId::STR_BOOK_S_STYLE};
-  static_assert(std::size(kSpacing) == CrossPointSettings::LINE_COMPRESSION_COUNT, "line spacing labels");
-  static_assert(std::size(kAlign) == CrossPointSettings::PARAGRAPH_ALIGNMENT_COUNT, "alignment labels");
   switch (row) {
     case 0:
       if (SETTINGS.sdFontFamilyName[0] != '\0') return SETTINGS.sdFontFamilyName;
@@ -1828,9 +1824,9 @@ std::string EpubReaderActivity::textRowValue(int row) const {
     case 1:
       return std::to_string(SETTINGS.fontPointSize) + " pt";
     case 2:
-      return I18N.get(kSpacing[SETTINGS.lineSpacing % CrossPointSettings::LINE_COMPRESSION_COUNT]);
+      return I18N.get(kSpacingIds[SETTINGS.lineSpacing % CrossPointSettings::LINE_COMPRESSION_COUNT]);
     case 3:
-      return I18N.get(kAlign[SETTINGS.paragraphAlignment % CrossPointSettings::PARAGRAPH_ALIGNMENT_COUNT]);
+      return I18N.get(kAlignIds[SETTINGS.paragraphAlignment % CrossPointSettings::PARAGRAPH_ALIGNMENT_COUNT]);
     case 4:
       return SETTINGS.focusReadingEnabled ? tr(STR_STATE_ON) : tr(STR_STATE_OFF);
     default:
@@ -1849,11 +1845,6 @@ void EpubReaderActivity::applyTextSettingLive() {
 // Settings-style option pickers for the Text panel's enum rows. Every
 // selection applies immediately to the page under the sheet.
 void EpubReaderActivity::showTextRowPopup(const int row) {
-  static constexpr StrId kSpacingIds[] = {StrId::STR_TIGHT, StrId::STR_NORMAL, StrId::STR_WIDE, StrId::STR_EXTRA_WIDE};
-  static constexpr StrId kAlignIds[] = {StrId::STR_JUSTIFY, StrId::STR_ALIGN_LEFT, StrId::STR_CENTER,
-                                        StrId::STR_ALIGN_RIGHT, StrId::STR_BOOK_S_STYLE};
-  static_assert(std::size(kSpacingIds) == CrossPointSettings::LINE_COMPRESSION_COUNT, "line spacing options");
-  static_assert(std::size(kAlignIds) == CrossPointSettings::PARAGRAPH_ALIGNMENT_COUNT, "alignment options");
   switch (row) {
     case 1: {
       // The point sizes the active family actually ships.
@@ -2047,7 +2038,7 @@ void EpubReaderActivity::renderOverlay() {
     model.rowValue = [this](int i) { return textRowValue(i); };
   } else {
     model.panelTitle = tr(STR_TOOL_MORE);
-    model.itemCount = static_cast<int>(moreActions.size());
+    model.itemCount = static_cast<int>(moreItems.size());
     model.rowText = [this](int i) { return moreRowName(i); };
     model.rowValue = [this](int i) { return moreRowValue(i); };
   }
@@ -2169,7 +2160,7 @@ void EpubReaderActivity::handleOverlayInput() {
   // --- Panels (Contents / Text / More) ---
   const int count = overlay == Overlay::Contents ? epub->getTocItemsCount()
                     : overlay == Overlay::Text   ? kTextRowCount
-                                                 : static_cast<int>(moreActions.size());
+                                                 : static_cast<int>(moreItems.size());
   const int pageRows = std::max(1, toolbarUi->visibleRows());
 
   // Activate the highlighted row: change a value / jump to a chapter / run an
@@ -2371,64 +2362,22 @@ void EpubReaderActivity::applyReaderTextSettings() {
 // two entries that have their own tool (chapters -> Contents, text -> Text).
 void EpubReaderActivity::buildMoreActions() {
   using MA = EpubReaderMenuActivity::MenuAction;
-  moreActions.clear();
-  if (!currentPageFootnotes.empty()) moreActions.push_back(MA::FOOTNOTES);
-  if (!cachedBookmarks.empty()) moreActions.push_back(MA::BOOKMARKS);
-  moreActions.push_back(MA::TOGGLE_BOOKMARK);
-  moreActions.push_back(MA::NIGHT_MODE);
-  if (Frontlight.present()) moreActions.push_back(MA::FRONTLIGHT);
-  moreActions.push_back(MA::DICTIONARY);
-  moreActions.push_back(MA::ROTATE_SCREEN);
-  moreActions.push_back(MA::AUTO_PAGE_TURN);
-  moreActions.push_back(MA::GO_TO_PERCENT);
-  moreActions.push_back(MA::SCREENSHOT);
-  moreActions.push_back(MA::DISPLAY_QR);
-  moreActions.push_back(MA::GO_HOME);
-  moreActions.push_back(MA::SYNC);
-  moreActions.push_back(MA::DELETE_CACHE);
+  EpubReaderMenuActivity::buildMenuItems(moreItems, !currentPageFootnotes.empty(), !cachedBookmarks.empty());
+  moreItems.erase(std::remove_if(moreItems.begin(), moreItems.end(),
+                                 [](const auto& item) {
+                                   return item.action == MA::SELECT_CHAPTER || item.action == MA::TEXT_SETTINGS;
+                                 }),
+                  moreItems.end());
 }
 
 std::string EpubReaderActivity::moreRowName(int row) const {
-  using MA = EpubReaderMenuActivity::MenuAction;
-  if (row < 0 || row >= static_cast<int>(moreActions.size())) return "";
-  switch (moreActions[row]) {
-    case MA::FOOTNOTES:
-      return tr(STR_FOOTNOTES);
-    case MA::BOOKMARKS:
-      return tr(STR_BOOKMARKS);
-    case MA::TOGGLE_BOOKMARK:
-      return tr(STR_TOGGLE_BOOKMARK);
-    case MA::NIGHT_MODE:
-      return tr(STR_NIGHT_MODE);
-    case MA::FRONTLIGHT:
-      return tr(STR_FRONTLIGHT);
-    case MA::DICTIONARY:
-      return tr(STR_LOOKUP);
-    case MA::ROTATE_SCREEN:
-      return tr(STR_ORIENTATION);
-    case MA::AUTO_PAGE_TURN:
-      return tr(STR_AUTO_TURN_PAGES_PER_MIN);
-    case MA::GO_TO_PERCENT:
-      return tr(STR_GO_TO_PERCENT);
-    case MA::SCREENSHOT:
-      return tr(STR_SCREENSHOT_BUTTON);
-    case MA::DISPLAY_QR:
-      return tr(STR_DISPLAY_QR);
-    case MA::SYNC:
-      return tr(STR_SYNC_PROGRESS);
-    case MA::GO_HOME:
-      return tr(STR_GO_HOME_BUTTON);
-    case MA::DELETE_CACHE:
-      return tr(STR_DELETE_CACHE);
-    default:
-      return "";
-  }
+  return row >= 0 && row < static_cast<int>(moreItems.size()) ? I18N.get(moreItems[row].labelId) : "";
 }
 
 std::string EpubReaderActivity::moreRowValue(int row) const {
   using MA = EpubReaderMenuActivity::MenuAction;
-  if (row < 0 || row >= static_cast<int>(moreActions.size())) return "";
-  switch (moreActions[row]) {
+  if (row < 0 || row >= static_cast<int>(moreItems.size())) return "";
+  switch (moreItems[row].action) {
     case MA::ROTATE_SCREEN:
       return I18N.get(SCREEN_ORIENTATION_NAMES[SETTINGS.orientation % CrossPointSettings::ORIENTATION_COUNT]);
     case MA::AUTO_PAGE_TURN:
@@ -2446,8 +2395,8 @@ std::string EpubReaderActivity::moreRowValue(int row) const {
 
 void EpubReaderActivity::activateMoreRow(int row) {
   using MA = EpubReaderMenuActivity::MenuAction;
-  if (row < 0 || row >= static_cast<int>(moreActions.size())) return;
-  const auto action = moreActions[row];
+  if (row < 0 || row >= static_cast<int>(moreItems.size())) return;
+  const auto action = moreItems[row].action;
   // In-place toggles keep the panel open and re-render the page beneath it.
   switch (action) {
     case MA::ROTATE_SCREEN: {

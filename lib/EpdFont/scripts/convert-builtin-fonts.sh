@@ -13,7 +13,7 @@ for size in ${NOTOSERIF_FONT_SIZES[@]}; do
     font_name="notoserif_${size}_$(echo $style | tr '[:upper:]' '[:lower:]')"
     font_path="../builtinFonts/source/NotoSerif/NotoSerif-${style}.ttf"
     output_path="../builtinFonts/${font_name}.h"
-    python fontconvert.py $font_name $size $font_path --2bit --compress --pnum --force-autohint > $output_path
+    python fontconvert.py $font_name $size $font_path --2bit --compress --pnum --force-autohint --zopfli > $output_path
     echo "Generated $output_path"
   done
 done
@@ -23,7 +23,7 @@ for size in ${NOTOSANS_FONT_SIZES[@]}; do
     font_name="notosans_${size}_$(echo $style | tr '[:upper:]' '[:lower:]')"
     font_path="../builtinFonts/source/NotoSans/NotoSans-${style}.ttf"
     output_path="../builtinFonts/${font_name}.h"
-    python fontconvert.py $font_name $size $font_path --2bit --compress --pnum --force-autohint > $output_path
+    python fontconvert.py $font_name $size $font_path --2bit --compress --pnum --force-autohint --zopfli > $output_path
     echo "Generated $output_path"
   done
 done
@@ -32,6 +32,34 @@ UI_FONT_SIZES=(10 12)
 # Medium, not Regular, is the UI text weight: 1-bit rasterisation at these sizes
 # snaps stems to whole pixels, and Regular lands on 2px where Medium lands on 3.
 UI_FONT_STYLES=("Medium" "Bold")
+
+# Arabic glyphs for UI text (menus, file browser titles). The built-in fonts
+# must cover the *output* of MiniBidi's do_shape() — contextual presentation
+# forms — not base letters, or shaped UI text silently drops glyphs.
+# Curated for firmware-size budget: core Arabic (Presentation Forms-B,
+# incl. the Lam-Alef ligature forms) plus the Farsi/Urdu extra letters'
+# Presentation Forms-A blocks, the few characters shaping leaves at their
+# base codepoint, Arabic punctuation, and both digit sets. No harakat and
+# no Sindhi/Pashto/Kurdish forms — book text gets those from SD-card fonts.
+ARABIC_INTERVALS=(
+  --additional-intervals 0x060C,0x060C  # Arabic comma
+  --additional-intervals 0x061B,0x061B  # Arabic semicolon
+  --additional-intervals 0x061F,0x061F  # Arabic question mark
+  --additional-intervals 0x0621,0x0621  # hamza (non-joining, never shaped)
+  --additional-intervals 0x0640,0x0640  # tatweel
+  --additional-intervals 0x0660,0x0669  # Arabic-Indic digits
+  --additional-intervals 0x06BA,0x06BA  # noon ghunna base (initial/medial keep base cp)
+  --additional-intervals 0x06D4,0x06D4  # Urdu full stop
+  --additional-intervals 0x06F0,0x06F9  # extended Arabic-Indic digits (Farsi/Urdu)
+  --additional-intervals 0xFB56,0xFB59  # peh (Farsi)
+  --additional-intervals 0xFB66,0xFB69  # tteh (Urdu)
+  --additional-intervals 0xFB7A,0xFB7D  # tcheh (Farsi)
+  --additional-intervals 0xFB88,0xFB95  # ddal, jeh, rreh (Urdu), keheh, gaf (Farsi/Urdu)
+  --additional-intervals 0xFB9E,0xFB9F  # noon ghunna isolated/final (Urdu)
+  --additional-intervals 0xFBA6,0xFBB1  # heh goal, heh doachashmee, yeh barree(+hamza) (Urdu)
+  --additional-intervals 0xFBFC,0xFBFF  # farsi yeh (Farsi/Urdu)
+  --additional-intervals 0xFE80,0xFEFC  # Presentation Forms-B: core Arabic + Lam-Alef
+)
 
 python generate-ui-noto-fonts.py
 
@@ -79,6 +107,15 @@ python verify-ui-noto-fonts.py
 # with, and the autohinter is what gave them even stems at 10/12px.
 UI_EXTRA_HEBREW_REGULAR="../builtinFonts/source/NotoSansHebrew/NotoSansHebrew-UIMedium.ttf"
 UI_EXTRA_HEBREW_BOLD="../builtinFonts/source/NotoSansHebrew/NotoSansHebrew-UIBold.ttf"
+
+# notosansui_*: the "Noto Sans" System Font option. Kept here rather than
+# hand-run, so a change to the generated EpdFontData layout regenerates them
+# with everything else -- they were left out of this script once and went stale.
+for size in 10 12; do
+  python fontconvert.py "notosansui_${size}_regular" $size     ../builtinFonts/source/NotoSans/NotoSans-Regular.ttf     ../builtinFonts/source/NotoSansHebrew/NotoSansHebrew-Regular.ttf     --additional-intervals 0x05D0,0x05EA --force-autohint > "../builtinFonts/notosansui_${size}_regular.h"
+  python fontconvert.py "notosansui_${size}_bold" $size     ../builtinFonts/source/NotoSans/NotoSans-Bold.ttf     ../builtinFonts/source/NotoSansHebrew/NotoSansHebrew-Bold.ttf     --additional-intervals 0x05D0,0x05EA --force-autohint > "../builtinFonts/notosansui_${size}_bold.h"
+  echo "Generated notosansui_${size}_{regular,bold}.h"
+done
 
 # EB Garamond UI font (extract static instances from variable font first with instancer).
 # Source: google/fonts main/ofl/ebgaramond/EBGaramond[wght].ttf -> instanced at wght=400/700.

@@ -81,7 +81,7 @@ class EpubReaderActivity final : public ReaderActivity {
   // re-render. Discarded on close / whenever the page under the overlay changes.
   bool overlayPageStored = false;
   int autoTurnOption = 0;  // current auto page-turn rate index (More panel)
-  std::vector<EpubReaderMenuActivity::MenuAction> moreActions;
+  std::vector<EpubReaderMenuActivity::MenuItem> moreItems;
 
   // Footnote support
   std::vector<FootnoteEntry> currentPageFootnotes;
@@ -148,6 +148,7 @@ class EpubReaderActivity final : public ReaderActivity {
   void activateMoreRow(int row);
   void openDictionaryWordSelect();
   bool launchKOReaderSync();
+  unsigned long confirmLongPressThreshold() const;
   void toggleAutoPageTurn(uint8_t selectedPageTurnOption);
   void loadCachedBookmarks();
   void addBookmark();

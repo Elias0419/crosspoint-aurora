@@ -5,7 +5,6 @@
 #include <I18n.h>
 #include <Logging.h>
 #include <WiFi.h>
-#include <esp_sntp.h>
 #include <esp_wifi.h>
 
 #include <algorithm>
@@ -47,65 +46,6 @@ const char* matchMethodName(const DocumentMatchMethod method) {
   return method == DocumentMatchMethod::FILENAME ? "filename" : "binary";
 }
 
-constexpr char NTP_SERVER_HOST[] = "pool.ntp.org";
-
-// Resolve the NTP host here and hand SNTP a literal address instead of a name.
-//
-// lwIP's SNTP resolves a server *name* asynchronously (dns_gethostbyname), and with
-// SNTP_STARTUP_DELAY the first request fires up to 5s after esp_sntp_init(), so the
-// lookup is easily still pending when the sync connection opens right after. Arduino's
-// NetworkManager::hostByName() calls dns_clear_cache() straight from the calling task --
-// no lwIP core lock -- the first time the interface's IP state changes, which is every
-// session's first lookup. Clearing the table runs dns_call_found() on the pending SNTP
-// entry (sntp_try_next_server -> sntp_retry -> sys_untimeout) outside TCPIP context and
-// panics on LWIP_ASSERT_CORE_LOCKED ("Required to lock TCPIP core functionality!").
-//
-// Resolving up front keeps SNTP free of DNS requests entirely, and the one unlocked
-// dns_clear_cache then happens while the DNS table is still empty.
-void syncTimeWithNTP() {
-  // Stop SNTP if already running (can't reconfigure while running)
-  if (esp_sntp_enabled()) {
-    esp_sntp_stop();
-  }
-
-  IPAddress ntpAddress;
-  if (WiFi.hostByName(NTP_SERVER_HOST, ntpAddress) != 1) {
-    LOG_DBG("KOSync", "Could not resolve %s, skipping NTP", NTP_SERVER_HOST);
-    return;
-  }
-  LOG_DBG("KOSync", "NTP server %s resolved to %s", NTP_SERVER_HOST, ntpAddress.toString().c_str());
-
-  ip_addr_t ntpServer;
-  ntpAddress.to_ip_addr_t(&ntpServer);
-
-  // Configure SNTP. Clearing the spare slots drops any hostname a previous
-  // configTime()/configTzTime() left there, which sntp_try_next_server() would
-  // otherwise resolve by name behind our back.
-  esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
-  for (u8_t i = 1; i < SNTP_MAX_SERVERS; i++) {
-    esp_sntp_setserver(i, nullptr);
-  }
-  esp_sntp_setserver(0, &ntpServer);
-  esp_sntp_init();
-
-  // Wait for time to sync (with timeout)
-  int retry = 0;
-  const int maxRetries = 50;  // 5 seconds max
-  while (sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED && retry < maxRetries) {
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-    retry++;
-  }
-
-  if (retry < maxRetries) {
-    LOG_DBG("KOSync", "NTP time synced");
-  } else {
-    LOG_DBG("KOSync", "NTP sync timeout, using fallback");
-  }
-
-  // Nothing after this point needs SNTP; drop its timer and socket before the
-  // TLS handshake, which is the tightest heap moment of the sync.
-  esp_sntp_stop();
-}
 }  // namespace
 
 KOReaderSyncActivity::KOReaderSyncActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
@@ -185,15 +125,18 @@ void KOReaderSyncActivity::onWifiSelectionComplete(const bool success) {
 
   LOG_DBG("KOSync", "WiFi connected, starting sync");
 
+  // Keep the station fully awake for the short sync transaction. The web server
+  // does the same because ESP32 modem sleep can introduce multi-second network
+  // stalls that surface as HTTP timeouts. WiFi is torn down when this activity exits.
+  WiFi.setSleep(false);
+  LOG_DBG("KOSync", "WiFi sleep disabled for sync");
+
   {
     RenderLock lock(*this);
     state = SYNCING;
     statusMessage = tr(STR_SYNCING_TIME);
   }
   requestUpdate(true);
-
-  // Sync time with NTP before making API requests
-  syncTimeWithNTP();
 
   {
     RenderLock lock(*this);

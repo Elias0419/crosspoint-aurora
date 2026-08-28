@@ -182,16 +182,8 @@ struct ThemeMetrics {
 
   int optionPopupItemSpacing;
   int optionPopupInnerPadding;
-  int optionPopupSelectionHPadding;
   int optionPopupSelectionVPadding;
-  int optionPopupTitleGap;
-  bool optionPopupUseSmallFont;
-  bool optionPopupOptionFontBold;
-  int optionPopupSelectionRadius;
-  bool optionPopupSelectionLight;
-  bool optionPopupDrawAllRows;
   int optionPopupDialogSideMargin;
-  bool optionPopupTitleSeparator;
 
   int textFieldHorizontalPadding;
   int textFieldNormalThickness;
@@ -207,7 +199,22 @@ struct ThemeMetrics {
   int capsuleRadius;
 };
 
-enum UIIcon { None = 0, Folder, Text, Image, Book, File, Recent, Settings, Transfer, Library, Wifi, Hotspot, Bookmark };
+enum UIIcon {
+  None = 0,
+  Folder,
+  Text,
+  Image,
+  Book,
+  File,
+  Recent,
+  Settings,
+  Transfer,
+  Library,
+  Wifi,
+  Hotspot,
+  Bookmark,
+  Usb
+};
 
 // Default theme implementation (Classic Theme)
 // Additional themes can inherit from this and override methods as needed
@@ -277,16 +284,8 @@ constexpr ThemeMetrics values = {.batteryWidth = 15,
                                  .popupProgressOutlineInverted = true,
                                  .optionPopupItemSpacing = 6,
                                  .optionPopupInnerPadding = 16,
-                                 .optionPopupSelectionHPadding = 8,
                                  .optionPopupSelectionVPadding = 4,
-                                 .optionPopupTitleGap = 10,
-                                 .optionPopupUseSmallFont = true,
-                                 .optionPopupOptionFontBold = true,
-                                 .optionPopupSelectionRadius = 0,
-                                 .optionPopupSelectionLight = false,
-                                 .optionPopupDrawAllRows = false,
                                  .optionPopupDialogSideMargin = 20,
-                                 .optionPopupTitleSeparator = true,
                                  .textFieldHorizontalPadding = 6,
                                  .textFieldNormalThickness = 1,
                                  .textFieldCursorThickness = 3,
@@ -322,6 +321,10 @@ class BaseTheme {
   virtual int getMenuRowHeight(const GfxRenderer& renderer) const;
   virtual int getListRowStep(bool hasSubtitle) const;
   virtual int getListPageItems(int contentHeight, bool hasSubtitle) const;
+  // The legacy full-list painter. Upstream migrated every list screen to
+  // FreeInkUI and dropped this; aurora's font pickers (FontSelectionActivity,
+  // DropCapFontSelectionActivity) still draw through the theme, and AuroraTheme
+  // overrides it, so the base implementation stays until those are ported.
   virtual void drawList(const GfxRenderer& renderer, Rect rect, int itemCount, int selectedIndex,
                         const std::function<std::string(int index)>& rowTitle,
                         const std::function<std::string(int index)>& rowSubtitle = nullptr,
@@ -332,10 +335,6 @@ class BaseTheme {
                           const char* subtitle = nullptr) const;
   virtual void drawSubHeader(const GfxRenderer& renderer, Rect rect, const char* label,
                              const char* rightLabel = nullptr) const;
-  virtual void drawTabBar(const GfxRenderer& renderer, Rect rect, const std::vector<TabInfo>& tabs,
-                          bool selected) const;
-  virtual bool tabIndexFromPoint(const GfxRenderer& renderer, Rect rect, const std::vector<TabInfo>& tabs, int x, int y,
-                                 int& index) const;
   virtual void drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std::vector<RecentBook>& recentBooks,
                                    const int selectorIndex, bool& coverRendered, bool& coverBufferStored,
                                    bool& bufferRestored, std::function<bool()> storeCoverBuffer) const;
@@ -403,8 +402,6 @@ class BaseTheme {
                               const std::function<std::string(int index)>& buttonLabel,
                               const std::function<UIIcon(int index)>& rowIcon) const;
   virtual Rect drawPopup(const GfxRenderer& renderer, const char* message) const;
-  virtual void drawOptionPopup(const GfxRenderer& renderer, const char* title, const std::vector<std::string>& options,
-                               int selectedIndex) const;
   virtual void fillPopupProgress(const GfxRenderer& renderer, const Rect& layout, const int progress) const;
   void drawStatusBar(GfxRenderer& renderer, const float bookProgress, const int currentPage, const int pageCount,
                      std::string title, const int paddingBottom = 0, const int textYOffset = 0,
