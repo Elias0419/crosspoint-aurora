@@ -3,9 +3,65 @@
 #include <Logging.h>
 #include <WiFi.h>
 #include <esp_sntp.h>
+#include <stdlib.h>
 #include <time.h>
 
 HalClock halClock;  // Singleton instance
+
+namespace {
+constexpr const char* NTP_SERVER_HOSTS[] = {"pool.ntp.org", "time.nist.gov"};
+constexpr size_t NTP_SERVER_HOST_COUNT = sizeof(NTP_SERVER_HOSTS) / sizeof(NTP_SERVER_HOSTS[0]);
+
+// Resolve the NTP hosts here and hand SNTP literal addresses instead of names.
+//
+// lwIP's SNTP resolves a server *name* asynchronously (dns_gethostbyname), and with
+// SNTP_STARTUP_DELAY the first request fires up to 5s after esp_sntp_init(), so the
+// lookup is easily still pending when the next connection opens -- and this runs on
+// the first WiFi connect, right before whatever the user came online to do. Arduino's
+// NetworkManager::hostByName() calls dns_clear_cache() straight from the calling task
+// -- no lwIP core lock -- the first time the interface's IP state changes, which is
+// every session's first lookup. Clearing the table runs dns_call_found() on the
+// pending SNTP entry (sntp_try_next_server -> sntp_retry -> sys_untimeout) outside
+// TCPIP context and panics on LWIP_ASSERT_CORE_LOCKED ("Required to lock TCPIP core
+// functionality!").
+//
+// Resolving up front keeps SNTP free of DNS requests entirely, and the one unlocked
+// dns_clear_cache then happens while the DNS table is still empty.
+bool startSntpWithResolvedServers() {
+  // Can't reconfigure while running.
+  if (esp_sntp_enabled()) esp_sntp_stop();
+
+  ip_addr_t servers[NTP_SERVER_HOST_COUNT];
+  uint8_t resolved = 0;
+  for (size_t i = 0; i < NTP_SERVER_HOST_COUNT && resolved < SNTP_MAX_SERVERS; i++) {
+    IPAddress address;
+    if (WiFi.hostByName(NTP_SERVER_HOSTS[i], address) != 1) {
+      LOG_DBG("CLK", "Could not resolve %s", NTP_SERVER_HOSTS[i]);
+      continue;
+    }
+    address.to_ip_addr_t(&servers[resolved]);
+    LOG_DBG("CLK", "NTP server %s resolved to %s", NTP_SERVER_HOSTS[i], address.toString().c_str());
+    resolved++;
+  }
+  if (resolved == 0) return false;
+
+  esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+  // Clear every slot first: a hostname a previous configTime()/configTzTime() left
+  // behind would otherwise be resolved by sntp_try_next_server() behind our back.
+  for (u8_t i = 0; i < SNTP_MAX_SERVERS; i++) esp_sntp_setserver(i, nullptr);
+  for (uint8_t i = 0; i < resolved; i++) esp_sntp_setserver(i, &servers[i]);
+  esp_sntp_init();
+  return true;
+}
+
+// Nothing outside this sync needs SNTP; drop its timer and socket on every exit
+// path rather than leaving it polling for the rest of the session.
+struct SntpStopGuard {
+  ~SntpStopGuard() {
+    if (esp_sntp_enabled()) esp_sntp_stop();
+  }
+};
+}  // namespace
 
 void HalClock::begin() {
   _available = _sdkRtc.begin();
@@ -75,7 +131,15 @@ bool HalClock::syncFromNTP() {
   }
 
   LOG_INF("CLK", "Starting NTP sync...");
-  configTzTime("UTC0", "pool.ntp.org", "time.nist.gov");
+  // configTzTime() would set this and hand SNTP the hostnames; only the TZ half
+  // is still wanted (the RTC is stored in UTC, and gmtime_r reads it back).
+  setenv("TZ", "UTC0", 1);
+  tzset();
+  if (!startSntpWithResolvedServers()) {
+    LOG_ERR("CLK", "No NTP server resolved, skipping sync");
+    return false;
+  }
+  const SntpStopGuard sntpStopGuard;
 
   // Wait for SNTP sync to complete (up to 5 seconds)
   constexpr int maxAttempts = 50;
