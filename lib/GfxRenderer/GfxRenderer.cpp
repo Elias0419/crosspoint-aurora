@@ -121,26 +121,28 @@ void GfxRenderer::ensureSdCardFontsReady(const int bodyFontId, const std::deque<
                                          const std::vector<EpdFontFamily::Style>& styles,
                                          const bool includeHyphen) const {
   if (words.empty()) return;
-  const int auxFontId = auxFontId_ != 0 ? auxFontId_ : bodyFontId;
+  const bool distinctAuxFont = auxFontId_ != 0 && auxFontId_ != bodyFontId;
+  const int auxFontId = distinctAuxFont ? auxFontId_ : bodyFontId;
   const int fontIds[2] = {bodyFontId, auxFontId};
-  const uint8_t familyCount = auxFontId == bodyFontId ? 1 : 2;
+  const uint8_t familyCount = distinctAuxFont ? 2 : 1;
 
   struct BatchContext {
     const std::deque<std::string>* words;
     const std::vector<EpdFontFamily::Style>* styles;
+    bool distinctAuxFont;
     bool auxiliary;
     mutable std::string shaped;
-  } ctx{&words, &styles, false, {}};
+  } ctx{&words, &styles, distinctAuxFont, false, {}};
   const auto getWord = [](const void* opaque, const uint32_t index) -> const char* {
     const auto* batch = static_cast<const BatchContext*>(opaque);
     if (index >= batch->words->size() || index >= batch->styles->size()) return nullptr;
-    if (EpdFontFamily::usesAuxFont((*batch->styles)[index]) != batch->auxiliary) return nullptr;
+    if (batch->distinctAuxFont && EpdFontFamily::usesAuxFont((*batch->styles)[index]) != batch->auxiliary) return nullptr;
     return (*batch->words)[index].c_str();
   };
   const auto getShapedWord = [](const void* opaque, const uint32_t index) -> const char* {
     const auto* batch = static_cast<const BatchContext*>(opaque);
     if (index >= batch->words->size() || index >= batch->styles->size()) return nullptr;
-    if (EpdFontFamily::usesAuxFont((*batch->styles)[index]) != batch->auxiliary) return nullptr;
+    if (batch->distinctAuxFont && EpdFontFamily::usesAuxFont((*batch->styles)[index]) != batch->auxiliary) return nullptr;
     const char* word = (*batch->words)[index].c_str();
     batch->shaped.clear();
     appendShapedRtlTokens(word, batch->shaped);
@@ -154,7 +156,7 @@ void GfxRenderer::ensureSdCardFontsReady(const int bodyFontId, const std::deque<
     uint8_t styleMask = 0;
     uint32_t selectedWords = 0;
     for (size_t i = 0; i < words.size() && i < styles.size(); ++i) {
-      if (EpdFontFamily::usesAuxFont(styles[i]) != ctx.auxiliary) continue;
+      if (distinctAuxFont && EpdFontFamily::usesAuxFont(styles[i]) != ctx.auxiliary) continue;
       styleMask |= static_cast<uint8_t>(1u << (static_cast<uint8_t>(styles[i]) & 0x03));
       selectedWords++;
     }
@@ -162,7 +164,8 @@ void GfxRenderer::ensureSdCardFontsReady(const int bodyFontId, const std::deque<
     uint32_t& calls = ctx.auxiliary ? auxAdvancePrewarmCalls_ : bodyAdvancePrewarmCalls_;
     calls++;
     const int missed = sdIt->second->buildAdvanceTable(getWord, &ctx, static_cast<uint32_t>(words.size()),
-                                                       selectedWords > 1, includeHyphen, styleMask, getShapedWord);
+                                                       selectedWords > 0 && words.size() > 1, includeHyphen, styleMask,
+                                                       getShapedWord);
     LOG_DBG("GFX", "Advance prewarm family=%s font=%d call=%lu words=%lu misses=%d", ctx.auxiliary ? "aux" : "body",
             fontIds[family], static_cast<unsigned long>(calls), static_cast<unsigned long>(selectedWords), missed);
   }
@@ -2133,7 +2136,8 @@ int GfxRenderer::getSpaceAdvance(const int fontId, const uint32_t leftCp, const 
   auto sdIt = sdCardFonts_.find(resolvedFontId);
   if (sdIt != sdCardFonts_.end() && sdIt->second->hasAdvanceTable()) {
     const uint8_t resolvedStyle = resolveSdCardStyle(*sdIt->second, leftStyle);
-    return fp4::toPixel(sdIt->second->getAdvance(' ', resolvedStyle));
+    const uint16_t spaceAdvance = sdIt->second->getAdvance(' ', resolvedStyle);
+    if (spaceAdvance != 0) return fp4::toPixel(spaceAdvance);
   }
 
   const auto fontIt = fontMap.find(resolvedFontId);
