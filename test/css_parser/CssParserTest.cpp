@@ -84,6 +84,59 @@ TEST_F(CssParserTest, ResolvesCaseInsensitiveCascadeAndMergesDuplicates) {
   EXPECT_EQ(style.marginTop.unit, CssUnit::Em);
 }
 
+TEST_F(CssParserTest, ParsesAuxiliaryFontFamilyFormsWithoutStoringNames) {
+  CssParser parser(cachePath());
+  ASSERT_EQ(loadCss(parser,
+                    ".plain { font-family: crosspoint-aux; }\n"
+                    ".single { font-family: 'crosspoint-aux'; }\n"
+                    ".double { font-family: \"CrOsSpOiNt-AuX\"; }\n"
+                    ".fallback { font-family: crosspoint-aux, serif; }\n"
+                    ".unrelated { font-family: Some Arbitrary Family; }\n"),
+            CssParser::ParseResult::Complete);
+
+  for (const char* className : {"plain", "single", "double", "fallback"}) {
+    const CssStyle style = parser.resolveStyle("span", className);
+    EXPECT_TRUE(style.hasAuxiliaryFont()) << className;
+    EXPECT_TRUE(style.auxiliaryFont) << className;
+  }
+  const CssStyle unrelated = parser.resolveStyle("span", "unrelated");
+  EXPECT_TRUE(unrelated.hasAuxiliaryFont());
+  EXPECT_FALSE(unrelated.auxiliaryFont);
+}
+
+TEST_F(CssParserTest, ParsesAuxiliaryFontInInlineAndClassStyles) {
+  const CssStyle inlineStyle = CssParser::parseInlineStyle("font-family: CROSSPOINT-AUX");
+  ASSERT_TRUE(inlineStyle.hasAuxiliaryFont());
+  EXPECT_TRUE(inlineStyle.auxiliaryFont);
+
+  CssParser parser(cachePath());
+  ASSERT_EQ(loadCss(parser, ".aux { font-family: crosspoint-aux; }\n"), CssParser::ParseResult::Complete);
+  const CssStyle classStyle = parser.resolveStyle("p", "aux");
+  ASSERT_TRUE(classStyle.hasAuxiliaryFont());
+  EXPECT_TRUE(classStyle.auxiliaryFont);
+}
+
+TEST_F(CssParserTest, ExplicitNonAuxiliaryFamilyOverridesInheritedSelection) {
+  CssStyle inherited = CssParser::parseInlineStyle("font-family: crosspoint-aux");
+  const CssStyle descendant = CssParser::parseInlineStyle("font-family: serif");
+  ASSERT_TRUE(inherited.auxiliaryFont);
+  ASSERT_TRUE(descendant.hasAuxiliaryFont());
+  ASSERT_FALSE(descendant.auxiliaryFont);
+
+  inherited.applyOver(descendant);
+  EXPECT_TRUE(inherited.hasAuxiliaryFont());
+  EXPECT_FALSE(inherited.auxiliaryFont);
+}
+
+TEST_F(CssParserTest, MalformedFontFamiliesRemainUndefined) {
+  for (const char* declaration : {"font-family:", "font-family: , serif", "font-family: 'crosspoint-aux",
+                                  "font-family: crosspoint-aux\""}) {
+    const CssStyle style = CssParser::parseInlineStyle(declaration);
+    EXPECT_FALSE(style.hasAuxiliaryFont()) << declaration;
+    EXPECT_FALSE(style.auxiliaryFont) << declaration;
+  }
+}
+
 TEST_F(CssParserTest, DeduplicatedStylesReachTheBoundedRuleCap) {
   CssParser parser(cachePath());
   std::string css;
@@ -171,7 +224,10 @@ TEST_F(CssParserTest, CanonicalCacheRoundTripPreservesStyles) {
   ASSERT_EQ(loadCss(writer,
                     "p { text-align: justify; margin-top: 2em; }\n"
                     ".bold { font-weight: bolder; }\n"
-                    ".hidden { display: none; }\n"),
+                    ".hidden { display: none; }\n"
+                    ".undefined { font-weight: normal; }\n"
+                    ".nonaux { font-family: serif; }\n"
+                    ".aux { font-family: crosspoint-aux; }\n"),
             CssParser::ParseResult::Complete);
   ASSERT_TRUE(writer.saveToCache(true));
   EXPECT_EQ(writer.inspectCache(), CssParser::CacheStatus::Complete);
@@ -184,6 +240,34 @@ TEST_F(CssParserTest, CanonicalCacheRoundTripPreservesStyles) {
   const CssStyle paragraph = reader.resolveStyle("p", "");
   EXPECT_EQ(paragraph.textAlign, CssTextAlign::Justify);
   EXPECT_FLOAT_EQ(paragraph.marginTop.value, 2.0f);
+  const CssStyle undefined = reader.resolveStyle("span", "undefined");
+  EXPECT_FALSE(undefined.hasAuxiliaryFont());
+  EXPECT_FALSE(undefined.auxiliaryFont);
+  const CssStyle nonaux = reader.resolveStyle("span", "nonaux");
+  EXPECT_TRUE(nonaux.hasAuxiliaryFont());
+  EXPECT_FALSE(nonaux.auxiliaryFont);
+  const CssStyle aux = reader.resolveStyle("span", "aux");
+  EXPECT_TRUE(aux.hasAuxiliaryFont());
+  EXPECT_TRUE(aux.auxiliaryFont);
+}
+
+TEST_F(CssParserTest, VersionTenCacheIsRejectedAndRemoved) {
+  CssParser writer(cachePath());
+  ASSERT_EQ(loadCss(writer, ".aux { font-family: crosspoint-aux; }\n"), CssParser::ParseResult::Complete);
+  ASSERT_TRUE(writer.saveToCache(true));
+  std::vector<uint8_t> cache = readCache();
+  ASSERT_FALSE(cache.empty());
+  cache[0] = 10;
+  writeCache(cache);
+
+  CssParser reader(cachePath());
+  EXPECT_EQ(reader.inspectCache(), CssParser::CacheStatus::Invalid);
+  EXPECT_EQ(reader.loadFromCache(), CssParser::CacheLoadResult::Invalid);
+  EXPECT_FALSE(fs::exists(cacheFile()));
+
+  ASSERT_EQ(loadCss(reader, ".aux { font-family: crosspoint-aux; }\n"), CssParser::ParseResult::Complete);
+  ASSERT_TRUE(reader.saveToCache(true));
+  EXPECT_EQ(reader.inspectCache(), CssParser::CacheStatus::Complete);
 }
 
 TEST_F(CssParserTest, PartialCacheIsValidatedDuringInspection) {
@@ -249,6 +333,7 @@ TEST_F(CssParserTest, CacheHydrationRejectsInvalidStyleEnumBytes) {
   }
   enumOffsets.push_back(kStyleEnumPrefixBytes + kStyleLengthFieldCount * kStyleLengthBytes);
   enumOffsets.push_back(kStyleEnumPrefixBytes + kStyleLengthFieldCount * kStyleLengthBytes + 1);
+  enumOffsets.push_back(kStyleEnumPrefixBytes + kStyleLengthFieldCount * kStyleLengthBytes + 2);
 
   for (const size_t enumOffset : enumOffsets) {
     SCOPED_TRACE(enumOffset);

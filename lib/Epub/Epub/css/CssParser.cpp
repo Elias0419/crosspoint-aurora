@@ -137,6 +137,26 @@ std::string_view stripTrailingImportant(std::string_view value) {
   return value;
 }
 
+bool interpretAuxiliaryFont(std::string_view value, bool& auxiliaryFont) {
+  value = trimCssWhitespace(stripTrailingImportant(value));
+  const size_t comma = value.find(',');
+  std::string_view firstFamily = trimCssWhitespace(value.substr(0, comma));
+  if (firstFamily.empty()) return false;
+
+  const char first = firstFamily.front();
+  if (first == '\'' || first == '"') {
+    if (firstFamily.size() < 2 || firstFamily.back() != first) return false;
+    firstFamily.remove_prefix(1);
+    firstFamily.remove_suffix(1);
+    if (firstFamily.empty() || firstFamily.find(first) != std::string_view::npos) return false;
+  } else if (firstFamily.find('\'') != std::string_view::npos || firstFamily.find('"') != std::string_view::npos) {
+    return false;
+  }
+
+  auxiliaryFont = iequalsAscii(firstFamily, "crosspoint-aux");
+  return true;
+}
+
 constexpr std::array STYLE_LENGTH_FIELDS = {
     &CssStyle::textIndent,   &CssStyle::marginTop,   &CssStyle::marginBottom,  &CssStyle::marginLeft,
     &CssStyle::marginRight,  &CssStyle::paddingTop,  &CssStyle::paddingBottom, &CssStyle::paddingLeft,
@@ -144,8 +164,8 @@ constexpr std::array STYLE_LENGTH_FIELDS = {
 };
 constexpr size_t STYLE_LENGTH_FIELD_COUNT = STYLE_LENGTH_FIELDS.size();
 constexpr size_t STYLE_WIRE_BYTES =
-    5 + STYLE_LENGTH_FIELD_COUNT * (sizeof(decltype(CssLength::value)) + 1) + 2 + sizeof(uint32_t);
-constexpr uint32_t CSS_DEFINED_BITS_MASK = (1u << 18) - 1;
+    5 + STYLE_LENGTH_FIELD_COUNT * (sizeof(decltype(CssLength::value)) + 1) + 3 + sizeof(uint32_t);
+constexpr uint32_t CSS_DEFINED_BITS_MASK = (1u << 19) - 1;
 
 void encodeStyleWire(const CssStyle& style, uint8_t (&out)[STYLE_WIRE_BYTES]) {
   size_t offset = 0;
@@ -165,6 +185,7 @@ void encodeStyleWire(const CssStyle& style, uint8_t (&out)[STYLE_WIRE_BYTES]) {
   }
   out[offset++] = static_cast<uint8_t>(style.display);
   out[offset++] = static_cast<uint8_t>(style.verticalAlign);
+  out[offset++] = style.auxiliaryFont ? 1 : 0;
 
   uint32_t definedBits = 0;
   if (style.defined.textAlign) definedBits |= 1 << 0;
@@ -185,6 +206,7 @@ void encodeStyleWire(const CssStyle& style, uint8_t (&out)[STYLE_WIRE_BYTES]) {
   if (style.defined.display) definedBits |= 1 << 15;
   if (style.defined.direction) definedBits |= 1 << 16;
   if (style.defined.verticalAlign) definedBits |= 1 << 17;
+  if (style.defined.auxiliaryFont) definedBits |= 1 << 18;
   memcpy(out + offset, &definedBits, sizeof(definedBits));
 }
 
@@ -222,11 +244,14 @@ bool decodeStyleWire(const uint8_t (&in)[STYLE_WIRE_BYTES], CssStyle& style) {
 
   const uint8_t display = in[offset++];
   const uint8_t verticalAlign = in[offset++];
-  if (display > static_cast<uint8_t>(CssDisplay::None) || verticalAlign > static_cast<uint8_t>(CssVerticalAlign::Sub)) {
+  const uint8_t auxiliaryFont = in[offset++];
+  if (display > static_cast<uint8_t>(CssDisplay::None) || verticalAlign > static_cast<uint8_t>(CssVerticalAlign::Sub) ||
+      auxiliaryFont > 1) {
     return false;
   }
   style.display = static_cast<CssDisplay>(display);
   style.verticalAlign = static_cast<CssVerticalAlign>(verticalAlign);
+  style.auxiliaryFont = auxiliaryFont != 0;
 
   uint32_t definedBits = 0;
   memcpy(&definedBits, in + offset, sizeof(definedBits));
@@ -249,6 +274,7 @@ bool decodeStyleWire(const uint8_t (&in)[STYLE_WIRE_BYTES], CssStyle& style) {
   style.defined.display = (definedBits & 1 << 15) != 0;
   style.defined.direction = (definedBits & 1 << 16) != 0;
   style.defined.verticalAlign = (definedBits & 1 << 17) != 0;
+  style.defined.auxiliaryFont = (definedBits & 1 << 18) != 0;
   return true;
 }
 
@@ -544,6 +570,12 @@ void CssParser::parseDeclarationIntoStyle(std::string_view decl, CssStyle& style
   } else if (iequalsAscii(name, "font-weight")) {
     style.fontWeight = interpretFontWeight(value);
     style.defined.fontWeight = 1;
+  } else if (iequalsAscii(name, "font-family")) {
+    bool auxiliaryFont = false;
+    if (interpretAuxiliaryFont(value, auxiliaryFont)) {
+      style.auxiliaryFont = auxiliaryFont;
+      style.defined.auxiliaryFont = 1;
+    }
   } else if (iequalsAscii(name, "text-decoration") || iequalsAscii(name, "text-decoration-line")) {
     style.textDecoration = interpretDecoration(value);
     style.defined.textDecoration = 1;
