@@ -76,6 +76,8 @@ class GfxRenderer {
   // recording to the (non-const) FontCacheManager. Same pragmatic compromise
   // as before, concentrated in a single pointer instead of four fields.
   mutable FontCacheManager* fontCacheManager_ = nullptr;
+  mutable uint32_t bodyAdvancePrewarmCalls_ = 0;
+  mutable uint32_t auxAdvancePrewarmCalls_ = 0;
 
   // Render context: the font id of the loaded drop-cap face (e.g. BookerlyDropcap
   // from the SD card), or 0 when none is loaded. Set by SdCardFontSystem when the
@@ -232,6 +234,8 @@ class GfxRenderer {
   void ensureSdCardFontReady(int fontId, const char* utf8Text, uint8_t styleMask = 0x0F) const;
   void ensureSdCardFontReady(int fontId, const std::deque<std::string>& words, bool includeHyphen,
                              uint8_t styleMask = 0x0F) const;
+  void ensureSdCardFontsReady(int bodyFontId, const std::deque<std::string>& words,
+                              const std::vector<EpdFontFamily::Style>& styles, bool includeHyphen) const;
 
   // Orientation control (affects logical width/height and coordinate transforms)
   void setOrientation(const Orientation o) { orientation = o; }
