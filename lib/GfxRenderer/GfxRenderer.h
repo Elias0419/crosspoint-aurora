@@ -83,6 +83,10 @@ class GfxRenderer {
   // TextBlock::render (to draw it at native size instead of scaling the body glyph).
   int dropCapFontId_ = 0;
 
+  // EPUB render context: the auxiliary family selected by AUX_FONT words.
+  // Zero keeps those words on the requested body family.
+  int auxFontId_ = 0;
+
   // One-shot refresh promotion (see promoteNextRefresh). Mutable because
   // displayBuffer() is const but must consume the flag.
   mutable bool promotedRefreshPending_ = false;
@@ -117,10 +121,9 @@ class GfxRenderer {
   // app-level SD font setup when an SD family is loaded. See resolveTextFontId().
   std::map<int, int> fallbackFontMap_;
 
-  // If `text` contains a CJK codepoint that `fontId` cannot render and `fontId`
-  // has a registered fallback, returns the fallback id; otherwise returns
-  // fontId unchanged. The whole string is routed as a unit so each draw/measure
-  // call stays single-font (consistent bit depth, metrics, wrapping).
+  // Selects the auxiliary family for AUX_FONT text, then applies the configured
+  // CJK fallback for that selected family. The whole string is routed as a unit
+  // so each draw/measure call stays single-font.
   int resolveTextFontId(int fontId, const char* text, EpdFontFamily::Style style) const;
 
   // Batch-load `text`'s glyphs into an SD-card font's resident mini tables
@@ -211,6 +214,8 @@ class GfxRenderer {
   // scaling the body glyph). Managed by SdCardFontSystem.
   void setDropCapFontId(int fontId) { dropCapFontId_ = fontId; }
   int getDropCapFontId() const { return dropCapFontId_; }
+  void setAuxFontId(int fontId) { auxFontId_ = fontId; }
+  int getAuxFontId() const { return auxFontId_; }
   // Ensure SD card font glyph data is loaded for the given text. Called from layout code
   // (which holds a const GfxRenderer&) before measuring word widths. Safe to call on non-SD fonts (no-op).
   // styleMask: bitmask of styles to prepare (bit 0=regular, 1=bold, 2=italic, 3=bold-italic).
