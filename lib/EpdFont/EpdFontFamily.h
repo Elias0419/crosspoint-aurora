@@ -4,7 +4,7 @@
 class EpdFontFamily {
  public:
   // Bitmask of text style flags carried per-word through layout and serialized in page cache.
-  // Bits 0-1 select the font variant (BOLD/ITALIC); bits 2-5 are decoration/positioning overlays
+  // Bits 0-1 select the font variant (BOLD/ITALIC); the remaining bits are independent overlays
   // applied at render time without changing the underlying font. getFont() ignores all bits
   // above bit 1 so decorations compose freely with bold/italic (e.g. BOLD | UNDERLINE | SUP).
   enum Style : uint8_t {
@@ -17,6 +17,7 @@ class EpdFontFamily {
     SUP = 16,            // superscript: glyph scaled 50%, raised ~40% of ascender
     SUB = 32,            // subscript: glyph scaled 50%, lowered ~25% of ascender
     RUBY_CONTINUE = 64,  // Group ruby follower marker (used internally by Epub layout)
+    AUX_FONT = 128,      // Selects the auxiliary font family without changing the font variant
   };
   static constexpr uint8_t TEXT_DECORATION_MASK = static_cast<uint8_t>(UNDERLINE | STRIKETHROUGH);
 
@@ -35,6 +36,7 @@ class EpdFontFamily {
   static constexpr bool hasTextDecoration(const Style style) {
     return (static_cast<uint8_t>(style) & TEXT_DECORATION_MASK) != 0;
   }
+  static constexpr bool usesAuxFont(const Style style) { return (static_cast<uint8_t>(style) & 0x80u) != 0; }
 
  private:
   const EpdFont* regular;
