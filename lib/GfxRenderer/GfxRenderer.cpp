@@ -2072,35 +2072,40 @@ int GfxRenderer::getSpaceWidth(const int fontId, const EpdFontFamily::Style styl
 }
 
 int GfxRenderer::getSpaceAdvance(const int fontId, const uint32_t leftCp, const uint32_t rightCp,
-                                 const EpdFontFamily::Style style) const {
-  const int resolvedFontId = resolveTextFontId(fontId, nullptr, style);
+                                 const EpdFontFamily::Style leftStyle,
+                                 const EpdFontFamily::Style rightStyle) const {
+  const int resolvedFontId = resolveTextFontId(fontId, nullptr, leftStyle);
+  const int rightFontId = resolveTextFontId(fontId, nullptr, rightStyle);
   // Advance table fast-path for SD card fonts during layout.
   // Kern data is not loaded during layout (consistent with previous metadataOnly behavior),
   // so we return just the space advance without kerning.
   auto sdIt = sdCardFonts_.find(resolvedFontId);
   if (sdIt != sdCardFonts_.end() && sdIt->second->hasAdvanceTable()) {
-    const uint8_t resolvedStyle = resolveSdCardStyle(*sdIt->second, style);
+    const uint8_t resolvedStyle = resolveSdCardStyle(*sdIt->second, leftStyle);
     return fp4::toPixel(sdIt->second->getAdvance(' ', resolvedStyle));
   }
 
   const auto fontIt = fontMap.find(resolvedFontId);
   if (fontIt == fontMap.end()) return 0;
   const auto& font = fontIt->second;
-  const EpdGlyph* spaceGlyph = font.getGlyph(' ', style);
+  const EpdGlyph* spaceGlyph = font.getGlyph(' ', leftStyle);
   const int32_t spaceAdvanceFP = spaceGlyph ? static_cast<int32_t>(spaceGlyph->advanceX) : 0;
+  if (resolvedFontId != rightFontId) return fp4::toPixel(spaceAdvanceFP);
   // Combine space advance + flanking kern into one fixed-point sum before snapping.
   // Snapping the combined value avoids the +/-1 px error from snapping each component separately.
-  const int32_t kernFP = static_cast<int32_t>(font.getKerning(leftCp, ' ', style)) +
-                         static_cast<int32_t>(font.getKerning(' ', rightCp, style));
+  const int32_t kernFP = static_cast<int32_t>(font.getKerning(leftCp, ' ', leftStyle)) +
+                         static_cast<int32_t>(font.getKerning(' ', rightCp, rightStyle));
   return fp4::toPixel(spaceAdvanceFP + kernFP);
 }
 
 int GfxRenderer::getKerning(const int fontId, const uint32_t leftCp, const uint32_t rightCp,
-                            const EpdFontFamily::Style style) const {
-  const int resolvedFontId = resolveTextFontId(fontId, nullptr, style);
+                            const EpdFontFamily::Style leftStyle,
+                            const EpdFontFamily::Style rightStyle) const {
+  const int resolvedFontId = resolveTextFontId(fontId, nullptr, leftStyle);
+  if (resolvedFontId != resolveTextFontId(fontId, nullptr, rightStyle)) return 0;
   const auto fontIt = fontMap.find(resolvedFontId);
   if (fontIt == fontMap.end()) return 0;
-  const int kernFP = fontIt->second.getKerning(leftCp, rightCp, style);  // 4.4 fixed-point
+  const int kernFP = fontIt->second.getKerning(leftCp, rightCp, leftStyle);  // 4.4 fixed-point
   return fp4::toPixel(kernFP);                                           // snap 4.4 fixed-point to nearest pixel
 }
 
