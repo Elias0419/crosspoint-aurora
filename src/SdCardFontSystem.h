@@ -53,6 +53,7 @@ class SdCardFontSystem {
     if (registryDirty_.exchange(false, std::memory_order_acquire)) {
       registry_.discover();
       dropCapRegistry_.discoverDropCaps();
+      auxReloadRequired_.store(true, std::memory_order_release);
     }
   }
 
@@ -63,6 +64,9 @@ class SdCardFontSystem {
   // No-op when no SD family is loaded. Safe to call repeatedly (sizes already
   // loaded are reused).
   void setupUiFallbacks(GfxRenderer& renderer);
+  // Keep the sentinel auxiliary family loaded independently of the body and
+  // drop-cap families so layout can measure both faces without SD churn.
+  void ensureAuxFontLoaded(GfxRenderer& renderer);
   // Keep the selected drop-cap face loaded in step with the reader's size
   // setting. The face is chosen by SETTINGS.dropCapFontName from the standalone
   // /.dropcap registry (independent of the body-font selection) and loaded into a
@@ -80,7 +84,11 @@ class SdCardFontSystem {
   SdCardFontRegistry dropCapRegistry_;
   SdCardFontManager manager_;
   SdCardFontManager dropCapManager_;
+  SdCardFontManager auxManager_;
   std::atomic<bool> registryDirty_{false};
+  std::atomic<bool> auxReloadRequired_{false};
+  uint8_t auxRequestedPointSize_ = 0;
+  bool auxLoadAttempted_ = false;
 };
 
 // Global SD card font system instance (defined in main.cpp).
