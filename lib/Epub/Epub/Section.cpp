@@ -49,7 +49,9 @@ namespace {
 //      whose identity drives the cap's wrap inset — re-paginates. Aurora had this at
 //      41 while upstream was still on 39; upstream has since published its own 40 and
 //      41, so it moves up to 42 to stay above every published upstream version.
-constexpr uint8_t SECTION_FILE_VERSION = 42;
+// v43 (aurora): header carries the auxiliary font id so changing the auxiliary
+//      face invalidates pagination built with its metrics.
+constexpr uint8_t SECTION_FILE_VERSION = 43;
 // Written into the version field while a build is in progress; patched to
 // SECTION_FILE_VERSION only when the build is finalized. An abandoned /
 // crash-interrupted .bin therefore carries version 0, which loadSectionFile rejects
@@ -69,7 +71,7 @@ constexpr uint8_t SECTION_FILE_INCOMPLETE_VERSION = 0;
 constexpr uint8_t SECTION_FILE_PARTIAL_VERSION = 0xFE - (SECTION_FILE_VERSION - 28);
 constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(bool) + sizeof(uint8_t) +
                                  sizeof(uint16_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(bool) + sizeof(bool) +
-                                 sizeof(uint8_t) + sizeof(bool) + sizeof(bool) + sizeof(bool) + sizeof(int) +
+                                 sizeof(uint8_t) + sizeof(bool) + sizeof(bool) + sizeof(bool) + sizeof(int) + sizeof(int) +
                                  sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint32_t) +
                                  sizeof(uint32_t);
 }  // namespace
@@ -120,8 +122,9 @@ void Section::writeSectionFileHeader(const ReaderRenderSpec& spec) {
                                    sizeof(spec.hyphenationEnabled) + sizeof(spec.embeddedStyle) +
                                    sizeof(spec.imageRendering) + sizeof(spec.focusReadingEnabled) +
                                    sizeof(spec.dropCapsEnabled) + sizeof(spec.smallCapsFirstLine) +
-                                   sizeof(renderer.getDropCapFontId()) + sizeof(uint32_t) + sizeof(uint32_t) +
-                                   sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint32_t),
+                                   sizeof(renderer.getAuxFontId()) + sizeof(renderer.getDropCapFontId()) +
+                                   sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint32_t) +
+                                   sizeof(uint32_t),
                 "Header size mismatch");
   // Written as the incomplete sentinel; finalizeBuild() patches it to
   // SECTION_FILE_VERSION as the last step, committing the file.
@@ -138,6 +141,7 @@ void Section::writeSectionFileHeader(const ReaderRenderSpec& spec) {
   serialization::writePod(file, spec.focusReadingEnabled);
   serialization::writePod(file, spec.dropCapsEnabled);
   serialization::writePod(file, spec.smallCapsFirstLine);
+  serialization::writePod(file, renderer.getAuxFontId());
   // The active drop-cap face id (0 when none loaded / drop caps off). Keys the cache so a
   // drop-cap-font (or -size) change re-paginates, since the cap's wrap inset was measured
   // in that face. Read from the renderer, not the spec: it is published by SdCardFontSystem.
@@ -180,6 +184,7 @@ bool Section::loadSectionFile(const ReaderRenderSpec& spec) {
     bool fileFocusReadingEnabled;
     bool fileDropCapsEnabled;
     bool fileSmallCapsFirstLine;
+    int fileAuxFontId;
     int fileDropCapFontId;
     serialization::readPod(file, fileFontId);
     serialization::readPod(file, fileLineCompression);
@@ -193,6 +198,7 @@ bool Section::loadSectionFile(const ReaderRenderSpec& spec) {
     serialization::readPod(file, fileFocusReadingEnabled);
     serialization::readPod(file, fileDropCapsEnabled);
     serialization::readPod(file, fileSmallCapsFirstLine);
+    serialization::readPod(file, fileAuxFontId);
     serialization::readPod(file, fileDropCapFontId);
 
     if (spec.fontId != fileFontId || spec.lineCompression != fileLineCompression ||
@@ -201,7 +207,7 @@ bool Section::loadSectionFile(const ReaderRenderSpec& spec) {
         spec.hyphenationEnabled != fileHyphenationEnabled || spec.embeddedStyle != fileEmbeddedStyle ||
         spec.imageRendering != fileImageRendering || spec.focusReadingEnabled != fileFocusReadingEnabled ||
         spec.dropCapsEnabled != fileDropCapsEnabled || spec.smallCapsFirstLine != fileSmallCapsFirstLine ||
-        renderer.getDropCapFontId() != fileDropCapFontId) {
+        renderer.getAuxFontId() != fileAuxFontId || renderer.getDropCapFontId() != fileDropCapFontId) {
       file.close();
       LOG_ERR("SCT", "Deserialization failed: Parameters do not match");
       clearCache();
