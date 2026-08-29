@@ -2299,6 +2299,9 @@ void ChapterHtmlSlimParser::makePages() {
     }
   }
 
+  // Line boxes deliberately follow the reader-selected body family. Auxiliary
+  // faces must therefore be generated at the same reader sizes; per-word
+  // ascender/descender maxima are not part of this minimal auxiliary-font pass.
   const int lineHeight = renderer.getLineHeight(fontId, lineCompression);
 
   // Apply top spacing before the paragraph (stored in pixels)
