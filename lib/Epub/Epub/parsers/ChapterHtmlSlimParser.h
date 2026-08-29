@@ -89,6 +89,7 @@ class ChapterHtmlSlimParser {
     int depth = 0;
     bool hasBold = false, bold = false;
     bool hasItalic = false, italic = false;
+    bool hasAuxFont = false, auxFont = false;
     bool hasTextDecoration = false;
     CssTextDecoration textDecoration = CssTextDecoration::None;
     bool hasDirection = false;
@@ -103,6 +104,7 @@ class ChapterHtmlSlimParser {
   CssStyle currentCssStyle;
   bool effectiveBold = false;
   bool effectiveItalic = false;
+  bool effectiveAuxFont = false;
   CssTextDecoration effectiveTextDecoration = CssTextDecoration::None;
   bool effectiveDirectionDefined = false;
   CssTextDirection effectiveDirection = CssTextDirection::Ltr;
@@ -177,6 +179,7 @@ class ChapterHtmlSlimParser {
   static EpdFontFamily::Style fontStyleForTextDecoration(CssTextDecoration decoration);
   static void applyDirectionToEntry(StyleStackEntry& entry, const CssStyle& css);
   static void applyTextDecorationToEntry(StyleStackEntry& entry, const CssStyle& css);
+  static void applyAuxFontToEntry(StyleStackEntry& entry, const CssStyle& css);
   void pushTableTextStyleEntry(const CssStyle& cssStyle);
   void pushDecorationStyleEntry(CssTextDecoration defaultDecoration, const CssStyle& cssStyle);
   void emitHorizontalRule(const BlockStyle& blockStyle);

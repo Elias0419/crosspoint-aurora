@@ -225,9 +225,16 @@ void ChapterHtmlSlimParser::applyTextDecorationToEntry(StyleStackEntry& entry, c
   }
 }
 
+void ChapterHtmlSlimParser::applyAuxFontToEntry(StyleStackEntry& entry, const CssStyle& css) {
+  if (css.hasAuxiliaryFont()) {
+    entry.hasAuxFont = true;
+    entry.auxFont = css.auxiliaryFont;
+  }
+}
+
 void ChapterHtmlSlimParser::pushTableTextStyleEntry(const CssStyle& cssStyle) {
   if (!cssStyle.hasFontWeight() && !cssStyle.hasFontStyle() && !cssStyle.hasTextDecoration() &&
-      !cssStyle.hasDirection() && !cssStyle.hasTextAlign()) {
+      !cssStyle.hasDirection() && !cssStyle.hasTextAlign() && !cssStyle.hasAuxiliaryFont()) {
     return;
   }
 
@@ -243,6 +250,7 @@ void ChapterHtmlSlimParser::pushTableTextStyleEntry(const CssStyle& cssStyle) {
   }
   applyTextDecorationToEntry(entry, cssStyle);
   applyDirectionToEntry(entry, cssStyle);
+  applyAuxFontToEntry(entry, cssStyle);
   if (cssStyle.hasTextAlign()) {
     entry.hasTextAlign = true;
     entry.textAlign = cssStyle.textAlign;
@@ -266,6 +274,7 @@ void ChapterHtmlSlimParser::pushDecorationStyleEntry(const CssTextDecoration def
     entry.italic = cssStyle.fontStyle == CssFontStyle::Italic;
   }
   applyDirectionToEntry(entry, cssStyle);
+  applyAuxFontToEntry(entry, cssStyle);
   inlineStyleStack.push_back(entry);
   updateEffectiveInlineStyle();
 }
@@ -275,6 +284,7 @@ void ChapterHtmlSlimParser::updateEffectiveInlineStyle() {
   // Start with block-level styles
   effectiveBold = currentCssStyle.hasFontWeight() && currentCssStyle.fontWeight == CssFontWeight::Bold;
   effectiveItalic = currentCssStyle.hasFontStyle() && currentCssStyle.fontStyle == CssFontStyle::Italic;
+  effectiveAuxFont = currentCssStyle.hasAuxiliaryFont() && currentCssStyle.auxiliaryFont;
   effectiveTextDecoration =
       currentCssStyle.hasTextDecoration() ? currentCssStyle.textDecoration : CssTextDecoration::None;
   effectiveDirectionDefined = currentCssStyle.hasDirection();
@@ -291,6 +301,9 @@ void ChapterHtmlSlimParser::updateEffectiveInlineStyle() {
     }
     if (entry.hasItalic) {
       effectiveItalic = entry.italic;
+    }
+    if (entry.hasAuxFont) {
+      effectiveAuxFont = entry.auxFont;
     }
     // CSS line decorations propagate through descendants; child entries add
     // their own lines but cannot cancel an ancestor's already active line.
@@ -383,7 +396,6 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
   } else if (effectiveSub) {
     fontStyle = static_cast<EpdFontFamily::Style>(fontStyle | EpdFontFamily::SUB);
   }
-
   // flush the buffer
   partWordBuffer[partWordBufferIndex] = '\0';
   const size_t wordBytes = static_cast<size_t>(partWordBufferIndex);
@@ -391,6 +403,9 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
     fallbackTableRowToStacked();
   }
 
+  if (effectiveAuxFont) {
+    fontStyle = static_cast<EpdFontFamily::Style>(fontStyle | EpdFontFamily::AUX_FONT);
+  }
   currentTextBlock->addWord(partWordBuffer, fontStyle, false, nextWordContinues, partWordVisibleOffset);
   if (insideTableCell && !tableRowStacked) {
     tableCellTextBytes += wordBytes;
@@ -1288,6 +1303,24 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       self->currentTextBlock->ensureRubyCapacity();
     }
     self->rubyTextBuffer.clear();
+    if (cssStyle.hasFontWeight() || cssStyle.hasFontStyle() || cssStyle.hasTextDecoration() ||
+        cssStyle.hasAuxiliaryFont() || cssStyle.hasDirection()) {
+      StyleStackEntry entry;
+      entry.depth = self->depth;
+      if (cssStyle.hasFontWeight()) {
+        entry.hasBold = true;
+        entry.bold = cssStyle.fontWeight == CssFontWeight::Bold;
+      }
+      if (cssStyle.hasFontStyle()) {
+        entry.hasItalic = true;
+        entry.italic = cssStyle.fontStyle == CssFontStyle::Italic;
+      }
+      applyTextDecorationToEntry(entry, cssStyle);
+      applyDirectionToEntry(entry, cssStyle);
+      applyAuxFontToEntry(entry, cssStyle);
+      self->inlineStyleStack.push_back(entry);
+      self->updateEffectiveInlineStyle();
+    }
     self->depth += 1;
     return;
   }
@@ -1359,6 +1392,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       entry.hasTextDecoration = true;
       entry.textDecoration = CssTextDecoration::Underline;
       applyDirectionToEntry(entry, cssStyle);
+      applyAuxFontToEntry(entry, cssStyle);
       self->inlineStyleStack.push_back(entry);
       self->updateEffectiveInlineStyle();
 
@@ -1393,6 +1427,12 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
 
   if (matches(name, HEADER_TAGS, std::size(HEADER_TAGS))) {
     self->currentCssStyle = cssStyle;
+    if (cssStyle.hasAuxiliaryFont()) {
+      StyleStackEntry entry;
+      entry.depth = self->depth;
+      applyAuxFontToEntry(entry, cssStyle);
+      self->inlineStyleStack.push_back(entry);
+    }
     auto headerBlockStyle = BlockStyle::fromCssStyle(cssStyle, emSize, CssTextAlign::Center, self->viewportWidth);
     headerBlockStyle.textAlignDefined = true;
     if (self->embeddedStyle && cssStyle.hasTextAlign()) {
@@ -1431,6 +1471,12 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       self->startNewTextBlock(brStyle);
     } else {
       self->currentCssStyle = cssStyle;
+      if (cssStyle.hasAuxiliaryFont()) {
+        StyleStackEntry entry;
+        entry.depth = self->depth;
+        applyAuxFontToEntry(entry, cssStyle);
+        self->inlineStyleStack.push_back(entry);
+      }
       const auto accumulated = self->blockStyleStack.back().getCombinedBlockStyle(userAlignmentBlockStyle,
                                                                                   BlockStyle::CombineAxis::Horizontal);
       self->blockStyleStack.push_back(accumulated);
@@ -1475,6 +1521,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     }
     applyTextDecorationToEntry(entry, cssStyle);
     applyDirectionToEntry(entry, cssStyle);
+    applyAuxFontToEntry(entry, cssStyle);
     self->inlineStyleStack.push_back(entry);
     self->updateEffectiveInlineStyle();
   } else if (matches(name, ITALIC_TAGS, std::size(ITALIC_TAGS))) {
@@ -1495,6 +1542,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     }
     applyTextDecorationToEntry(entry, cssStyle);
     applyDirectionToEntry(entry, cssStyle);
+    applyAuxFontToEntry(entry, cssStyle);
     self->inlineStyleStack.push_back(entry);
     self->updateEffectiveInlineStyle();
   } else if (strcmp(name, "sup") == 0 || strcmp(name, "sub") == 0) {
@@ -1511,12 +1559,14 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       entry.hasSub = true;
       entry.sub = true;
     }
+    applyAuxFontToEntry(entry, cssStyle);
     self->inlineStyleStack.push_back(entry);
     self->updateEffectiveInlineStyle();
   } else if (strcmp(name, "span") == 0 || !isHeaderOrBlock(name)) {
     // Handle span and other inline elements for CSS styling
     const bool inheritedTableTextAlign = self->tableDepth >= 1 && cssStyle.hasTextAlign();
     if (cssStyle.hasFontWeight() || cssStyle.hasFontStyle() || cssStyle.hasTextDecoration() ||
+        cssStyle.hasAuxiliaryFont() ||
         cssStyle.hasDirection() || cssStyle.hasVerticalAlign() || inheritedTableTextAlign) {
       // Flush buffer before style change so preceding text gets current style
       if (self->partWordBufferIndex > 0) {
@@ -1534,6 +1584,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
         entry.italic = cssStyle.fontStyle == CssFontStyle::Italic;
       }
       applyTextDecorationToEntry(entry, cssStyle);
+      applyAuxFontToEntry(entry, cssStyle);
       applyDirectionToEntry(entry, cssStyle);
       if (inheritedTableTextAlign) {
         entry.hasTextAlign = true;
@@ -1847,6 +1898,9 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
     return;
   }
   if (strcmp(name, "ruby") == 0 && self->inRuby) {
+    if (self->partWordBufferIndex > 0) {
+      self->flushPartWordBuffer();
+    }
     self->inRuby = false;
     self->rubyStartWordIndex = -1;
     self->rubyTextBuffer.clear();
@@ -1855,6 +1909,10 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
       self->nextWordContinues = true;
     }
     self->depth -= 1;
+    if (!self->inlineStyleStack.empty() && self->inlineStyleStack.back().depth == self->depth) {
+      self->inlineStyleStack.pop_back();
+      self->updateEffectiveInlineStyle();
+    }
     return;
   }
   // Check if any style state will change after we decrement depth
