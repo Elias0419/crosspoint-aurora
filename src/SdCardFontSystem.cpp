@@ -11,6 +11,10 @@
 
 namespace {
 
+// Auxiliary files use the ordinary /.fonts or visible /fonts registry. They
+// are not discovered through the standalone /.dropcap roots.
+static constexpr char AUX_FONT_FAMILY[] = "CrossPointAux";
+
 // Point the reader font size at a size the given family actually ships, and
 // persist the change so the settings UI and the loaded font never disagree.
 // Guarded by the value-change check: a no-op snap must not write SPIFFS.
@@ -65,9 +69,49 @@ void SdCardFontSystem::begin(GfxRenderer& renderer) {
     }
   }
 
+  ensureAuxFontLoaded(renderer);
   ensureDropCapLoaded(renderer);
 
   LOG_DBG("SDFS", "SD font system ready (%d families discovered)", registry_.getFamilyCount());
+}
+
+void SdCardFontSystem::ensureAuxFontLoaded(GfxRenderer& renderer) {
+  const bool forceReload = auxReloadRequired_.exchange(false, std::memory_order_acquire);
+  const auto* family = registry_.findFamily(AUX_FONT_FAMILY);
+  const auto* selected = family ? family->findNearestSize(SETTINGS.fontPointSize) : nullptr;
+  const uint8_t wantedPointSize = selected ? selected->pointSize : 0;
+
+  if (!forceReload && wantedPointSize != 0 && auxManager_.currentFamilyName() == AUX_FONT_FAMILY &&
+      auxManager_.currentPointSize() == wantedPointSize) {
+    renderer.setAuxFontId(auxManager_.getFontId(AUX_FONT_FAMILY));
+    return;
+  }
+  if (!forceReload && auxLoadAttempted_ && auxRequestedPointSize_ == SETTINGS.fontPointSize &&
+      auxManager_.currentFamilyName().empty()) {
+    return;
+  }
+
+  // Clear the published id before destroying the font object it identifies.
+  renderer.setAuxFontId(0);
+  if (!auxManager_.currentFamilyName().empty()) auxManager_.unloadAll(renderer);
+  auxLoadAttempted_ = true;
+  auxRequestedPointSize_ = SETTINGS.fontPointSize;
+
+  if (!family) {
+    LOG_DBG("SDFS", "Auxiliary font family %s not found", AUX_FONT_FAMILY);
+    return;
+  }
+  if (!selected) {
+    LOG_DBG("SDFS", "Auxiliary font family %s has no sizes", AUX_FONT_FAMILY);
+    return;
+  }
+  if (!auxManager_.loadFamily(*family, renderer, SETTINGS.fontPointSize)) {
+    LOG_ERR("SDFS", "Failed to load auxiliary font family %s", AUX_FONT_FAMILY);
+    return;
+  }
+
+  renderer.setAuxFontId(auxManager_.getFontId(AUX_FONT_FAMILY));
+  LOG_DBG("SDFS", "Loaded auxiliary font family %s (pt %u)", AUX_FONT_FAMILY, auxManager_.currentPointSize());
 }
 
 void SdCardFontSystem::ensureDropCapLoaded(GfxRenderer& renderer) {
@@ -145,7 +189,10 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) {
     LOG_DBG("SDFS", "Registry dirty — re-discovering fonts");
     registry_.discover();
     dropCapRegistry_.discoverDropCaps();
+    auxReloadRequired_.store(true, std::memory_order_release);
   }
+
+  ensureAuxFontLoaded(renderer);
 
   // Keep the drop-cap face in step regardless of which body font is selected.
   // Done before the body-font early-returns below so it always runs.

@@ -209,6 +209,16 @@ class GfxRenderer {
   // setFallbackFont maps a primary UI font id to an SD font id of the same size.
   void setFallbackFont(int primaryFontId, int fallbackFontId) { fallbackFontMap_[primaryFontId] = fallbackFontId; }
   void clearFallbackFonts() { fallbackFontMap_.clear(); }
+  // Remove only mappings that refer to a font owned by the unloading manager.
+  void removeFallbackFontId(int fallbackFontId) {
+    for (auto it = fallbackFontMap_.begin(); it != fallbackFontMap_.end();) {
+      if (it->second == fallbackFontId) {
+        it = fallbackFontMap_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
   // Drop-cap face: a separate large font used to render a chapter's enlarged
   // initial at native size. 0 = none loaded (layout/render fall back to integer-
   // scaling the body glyph). Managed by SdCardFontSystem.
