@@ -2,6 +2,7 @@
 
 #include <HalStorage.h>
 #include <Logging.h>
+#include <Memory.h>
 #include <Utf8.h>
 
 #include <algorithm>
@@ -1510,6 +1511,51 @@ int SdCardFont::buildAdvanceTable(const char* utf8Text, uint8_t styleMask, const
 int SdCardFont::buildAdvanceTable(const std::deque<std::string>& words, bool includeHyphen, uint8_t styleMask,
                                   const char* extraText) {
   return buildAdvanceTableRange(words.begin(), words.end(), words.size() > 1, includeHyphen, styleMask, extraText);
+}
+
+int SdCardFont::buildAdvanceTable(const TextGetter getter, const void* ctx, const uint32_t textCount,
+                                  const bool includeSpace, const bool includeHyphen, uint8_t styleMask,
+                                  const TextGetter extraGetter) {
+  if (!loaded_ || getter == nullptr) return -1;
+  styleMask = resolveStyleMask(styleMask);
+  if (styleMask == 0) return 0;
+
+  const unsigned long startMs = millis();
+  // This single bounded scratch is shared by the complete streamed batch. At
+  // 16,392 bytes it stays below 5% of C3 RAM and replaces filtered word copies.
+  static constexpr uint32_t MAX_UNIQUE_CODEPOINTS = 4096;
+  auto codepoints = makeUniqueNoThrow<uint32_t[]>(MAX_UNIQUE_CODEPOINTS + 2);
+  if (!codepoints) {
+    LOG_ERR("SDCF", "buildAdvanceTable: failed to allocate codepoint buffer (%u bytes)",
+            (MAX_UNIQUE_CODEPOINTS + 2) * 4);
+    return -1;
+  }
+
+  uint32_t cpCount = 0;
+  bool hitCap = false;
+  for (uint32_t i = 0; i < textCount && !hitCap; ++i) {
+    const char* text = getter(ctx, i);
+    if (text) hitCap = collectUniqueCodepoints(text, codepoints.get(), cpCount, MAX_UNIQUE_CODEPOINTS);
+    if (extraGetter && !hitCap) {
+      const char* extra = extraGetter(ctx, i);
+      if (extra) hitCap = collectUniqueCodepoints(extra, codepoints.get(), cpCount, MAX_UNIQUE_CODEPOINTS);
+    }
+  }
+  const auto appendSynthetic = [&](const uint32_t cp) {
+    if (std::none_of(codepoints.get(), codepoints.get() + cpCount, [cp](uint32_t value) { return value == cp; })) {
+      codepoints[cpCount++] = cp;
+    }
+  };
+  if (includeSpace) appendSynthetic(' ');
+  if (includeHyphen) appendSynthetic('-');
+  if (hitCap) {
+    LOG_ERR("SDCF", "buildAdvanceTable: unique codepoint cap (%u) hit, layout may be approximate",
+            MAX_UNIQUE_CODEPOINTS);
+  }
+  std::sort(codepoints.get(), codepoints.get() + cpCount);
+  const int missed = fetchAdvancesForCodepoints(codepoints.get(), cpCount, styleMask);
+  stats_.prewarmTotalMs = millis() - startMs;
+  return missed;
 }
 
 // --- Stats ---

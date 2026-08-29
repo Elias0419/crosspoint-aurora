@@ -70,6 +70,8 @@ class SdCardFont {
   int buildAdvanceTable(const char* utf8Text, uint8_t styleMask = 0x0F, const char* extraText = nullptr);
   int buildAdvanceTable(const std::deque<std::string>& words, bool includeHyphen, uint8_t styleMask = 0x0F,
                         const char* extraText = nullptr);
+  int buildAdvanceTable(TextGetter getter, const void* ctx, uint32_t textCount, bool includeSpace,
+                        bool includeHyphen, uint8_t styleMask = 0x0F, TextGetter extraGetter = nullptr);
 
   // Look up advanceX for a codepoint from the advance table.
   // Returns the 12.4 fixed-point advance, or 0 if not found.

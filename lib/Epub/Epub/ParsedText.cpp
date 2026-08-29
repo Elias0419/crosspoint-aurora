@@ -909,17 +909,7 @@ void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fo
   // entirely — no heap allocation. For SD card fonts this reads glyph metadata
   // (advanceX only, no bitmaps) for all unique codepoints in this paragraph so
   // that calculateWordWidths() can measure text without on-demand SD I/O.
-  if (renderer.isSdCardFont(fontId)) {
-    // Style mask: only ask the SD font to load advances for styles actually
-    // used in this paragraph. Style index is the low two bits (regular/bold/
-    // italic/bold-italic); the underline bit is irrelevant to advance metrics.
-    uint8_t styleMask = 0;
-    for (auto s : wordStyles) {
-      styleMask |= static_cast<uint8_t>(1u << (static_cast<uint8_t>(s) & 0x03));
-    }
-    if (styleMask == 0) styleMask = 0x01;  // defensive: regular only
-    renderer.ensureSdCardFontReady(fontId, words, hyphenationEnabled, styleMask);
-  }
+  renderer.ensureSdCardFontsReady(fontId, words, wordStyles, hyphenationEnabled);
 
   const int pageWidth = viewportWidth;
   auto wordWidths = calculateWordWidths(renderer, fontId);
