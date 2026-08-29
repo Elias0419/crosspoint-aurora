@@ -181,18 +181,19 @@ void GfxRenderer::insertFont(const int fontId, EpdFontFamily font) {
 }
 
 int GfxRenderer::resolveTextFontId(const int fontId, const char* text, const EpdFontFamily::Style style) const {
+  const int selectedFontId = EpdFontFamily::usesAuxFont(style) && auxFontId_ != 0 ? auxFontId_ : fontId;
   if (fallbackFontMap_.empty() || text == nullptr || *text == '\0') {
-    return fontId;
+    return selectedFontId;
   }
-  const auto fbIt = fallbackFontMap_.find(fontId);
+  const auto fbIt = fallbackFontMap_.find(selectedFontId);
   if (fbIt == fallbackFontMap_.end()) {
-    return fontId;  // no fallback registered for this font
+    return selectedFontId;  // no fallback registered for the selected family
   }
   const int fallbackFontId = fbIt->second;
-  const auto fontIt = fontMap.find(fontId);
+  const auto fontIt = fontMap.find(selectedFontId);
   const auto fallbackIt = fontMap.find(fallbackFontId);
   if (fontIt == fontMap.end() || fallbackIt == fontMap.end()) {
-    return fontId;  // unknown primary or fallback not loaded — let the caller handle it
+    return selectedFontId;  // unknown primary or fallback not loaded — let the caller handle it
   }
   const EpdFontFamily& primary = fontIt->second;
   const EpdFontFamily& fallback = fallbackIt->second;
@@ -207,7 +208,7 @@ int GfxRenderer::resolveTextFontId(const int fontId, const char* text, const Epd
       return fallbackFontId;
     }
   }
-  return fontId;
+  return selectedFontId;
 }
 
 void GfxRenderer::prewarmFallbackText(const int fontId, const TextGetter getter, const void* ctx,
@@ -2052,16 +2053,17 @@ bool GfxRenderer::copyBufferToRegion(int lx, int ly, int lw, int lh, const uint8
 }
 
 int GfxRenderer::getSpaceWidth(const int fontId, const EpdFontFamily::Style style) const {
+  const int resolvedFontId = resolveTextFontId(fontId, nullptr, style);
   // Advance table fast-path for SD card fonts during layout
-  auto sdIt = sdCardFonts_.find(fontId);
+  auto sdIt = sdCardFonts_.find(resolvedFontId);
   if (sdIt != sdCardFonts_.end() && sdIt->second->hasAdvanceTable()) {
     const uint8_t resolvedStyle = resolveSdCardStyle(*sdIt->second, style);
     return fp4::toPixel(sdIt->second->getAdvance(' ', resolvedStyle));
   }
 
-  const auto fontIt = fontMap.find(fontId);
+  const auto fontIt = fontMap.find(resolvedFontId);
   if (fontIt == fontMap.end()) {
-    LOG_ERR("GFX", "Font %d not found", fontId);
+    LOG_ERR("GFX", "Font %d not found", resolvedFontId);
     return 0;
   }
 
@@ -2071,16 +2073,17 @@ int GfxRenderer::getSpaceWidth(const int fontId, const EpdFontFamily::Style styl
 
 int GfxRenderer::getSpaceAdvance(const int fontId, const uint32_t leftCp, const uint32_t rightCp,
                                  const EpdFontFamily::Style style) const {
+  const int resolvedFontId = resolveTextFontId(fontId, nullptr, style);
   // Advance table fast-path for SD card fonts during layout.
   // Kern data is not loaded during layout (consistent with previous metadataOnly behavior),
   // so we return just the space advance without kerning.
-  auto sdIt = sdCardFonts_.find(fontId);
+  auto sdIt = sdCardFonts_.find(resolvedFontId);
   if (sdIt != sdCardFonts_.end() && sdIt->second->hasAdvanceTable()) {
     const uint8_t resolvedStyle = resolveSdCardStyle(*sdIt->second, style);
     return fp4::toPixel(sdIt->second->getAdvance(' ', resolvedStyle));
   }
 
-  const auto fontIt = fontMap.find(fontId);
+  const auto fontIt = fontMap.find(resolvedFontId);
   if (fontIt == fontMap.end()) return 0;
   const auto& font = fontIt->second;
   const EpdGlyph* spaceGlyph = font.getGlyph(' ', style);
@@ -2094,7 +2097,8 @@ int GfxRenderer::getSpaceAdvance(const int fontId, const uint32_t leftCp, const 
 
 int GfxRenderer::getKerning(const int fontId, const uint32_t leftCp, const uint32_t rightCp,
                             const EpdFontFamily::Style style) const {
-  const auto fontIt = fontMap.find(fontId);
+  const int resolvedFontId = resolveTextFontId(fontId, nullptr, style);
+  const auto fontIt = fontMap.find(resolvedFontId);
   if (fontIt == fontMap.end()) return 0;
   const int kernFP = fontIt->second.getKerning(leftCp, rightCp, style);  // 4.4 fixed-point
   return fp4::toPixel(kernFP);                                           // snap 4.4 fixed-point to nearest pixel
